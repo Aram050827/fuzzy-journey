@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Կարգավորումներ
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")  # Փոխարինեք նոր տոկենով
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")  # Փոխարինեք ngrok կամ Render URL-ով
-PORT = int(os.getenv("PORT", 8443))
+PORT = int(os.getenv("PORT", 10000))
 
 # Տվյալների բազայի սկզբնավորում
 def init_db():
