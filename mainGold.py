@@ -21,7 +21,7 @@ MAX_NUMBER = 80
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
 
 # Database initialization
 def init_db():
