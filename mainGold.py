@@ -1,4 +1,3 @@
-
 import os
 import sqlite3
 import logging
@@ -22,13 +21,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Կարգավորումներ
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")  # Փոխարինեք նոր տոկենով
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")  # Փոխարինեք ngrok կամ Render URL-ով
+BOT_TOKEN = os.getenv("7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
+
+# Ստուգել տոկենը
+if not BOT_TOKEN:
+    logger.error("BOT_TOKEN միջավայրի փոփոխականը սահմանված չէ։ Խնդրում եմ սահմանեք այն։")
+    raise ValueError("BOT_TOKEN-ը պարտադիր է։")
 
 # Տվյալների բազայի սկզբնավորում
 def init_db():
-    conn = sqlite3.connect('lotto.db')  # Render.com-ում փոխեք '/data/lotto.db'-ի
+    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
@@ -58,7 +63,8 @@ def init_db():
 
 # Օգտատիրոջ ստեղծում
 def create_user(user_id, first_name):
-    conn = sqlite3.connect('lotto.db')
+    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (user_id, first_name))
     conn.commit()
@@ -71,7 +77,8 @@ def generate_card():
 
 # Խաղի ստեղծում
 def create_game(creator_id, is_private):
-    conn = sqlite3.connect('lotto.db')
+    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("INSERT INTO games (creator_id, is_private, status, start_time) VALUES (?, ?, ?, ?)",
               (creator_id, is_private, 'waiting', time.time()))
@@ -82,7 +89,8 @@ def create_game(creator_id, is_private):
 
 # Խաղացողի ավելացում
 def add_player(game_id, user_id, card):
-    conn = sqlite3.connect('lotto.db')
+    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO game_players (game_id, user_id, card) VALUES (?, ?, ?)",
               (game_id, user_id, card))
@@ -118,21 +126,18 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Խաղի ավարտ
 async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id):
-    conn = sqlite3.connect('lotto.db')
+    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
-    # Ստանալ խաղի տվյալները
     c.execute("SELECT user_id, card FROM game_players WHERE game_id = ?", (game_id,))
     players = c.fetchall()
     
-    # Ստանալ հաղթողի անունը
     c.execute("SELECT first_name FROM users WHERE user_id = ?", (winner_id,))
     winner_name = c.fetchone()[0]
     
-    # Պատրաստել քարտերի տեքստ
     card_text = "\n".join([f"🎴 {context.bot.get_user(p[0]).first_name}: {p[1]}" for p in players])
     
-    # Ծանուցել բոլոր խաղացողներին
     for player_id, _ in players:
         try:
             if int(player_id) == winner_id:
@@ -150,7 +155,6 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id):
         except Exception as e:
             logger.error(f"Սխալ խաղացող {player_id}-ին ծանուցելիս: {e}")
     
-    # Ծանուցել սպասման ցուցակում գտնվողներին
     c.execute("SELECT user_id FROM waiting_list WHERE game_id = ?", (game_id,))
     waiting_users = c.fetchall()
     for user_id in waiting_users:
@@ -163,7 +167,6 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id):
         except Exception as e:
             logger.error(f"Սխալ սպասող {user_id[0]}-ին ծանուցելիս: {e}")
     
-    # Ջնջել խաղը և սպասման ցուցակը
     c.execute("DELETE FROM game_players WHERE game_id = ?", (game_id,))
     c.execute("DELETE FROM waiting_list WHERE game_id = ?", (game_id,))
     c.execute("DELETE FROM games WHERE game_id = ?", (game_id,))
@@ -177,7 +180,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
     
     if query.data == 'play':
-        conn = sqlite3.connect('lotto.db')
+        db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+        conn = sqlite3.connect(db_path)
         c = conn.cursor()
         c.execute("SELECT game_id FROM games WHERE status = 'waiting' AND is_private = 0")
         game = c.fetchone()
@@ -201,7 +205,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         card = generate_card()
         add_player(game_id, user.id, card)
         
-        keyboard = [[InlineKeyboardButton("🚀 Սկսել խաղը", callback_data=f'start_private_{game_id}')]]
+        keyboard = [[InlineKeyboardButton("🚀 Սկսել խաղըintel", callback_data=f'start_private_{game_id}')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text(
             f"🎉 Մասնավոր խաղ #{game_id} ստեղծվեց։ Ձեր քարտը՝ {card}\n"
@@ -216,7 +220,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_private_game(context, {'game_id': game_id})
     
     elif query.data == 'wait':
-        conn = sqlite3.connect('lotto.db')
+        db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+        conn = sqlite3.connect(db_path)
         c = conn.cursor()
         c.execute("SELECT game_id FROM games WHERE status = 'waiting' AND is_private = 0")
         game = c.fetchone()
@@ -243,7 +248,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Հանրային խաղի մեկնարկ
 async def start_public_game(context: ContextTypes.DEFAULT_TYPE, job):
     game_id = job.data['game_id']
-    conn = sqlite3.connect('lotto.db')
+    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
     c.execute("SELECT user_id FROM game_players WHERE game_id = ?", (game_id,))
@@ -273,8 +279,7 @@ async def start_public_game(context: ContextTypes.DEFAULT_TYPE, job):
         f"🎲 Խաղ #{game_id} սկսվեց։ {len(players)} խաղացող։"
     )
     
-    # Խաղի տրամաբանություն (օրինակ՝ թվերի հանում)
-    numbers = random.sample(range(1, 91), 5)  # Օրինակ՝ 5 թիվ
+    numbers = random.sample(range(1, 91), 5)
     for num in numbers:
         await context.bot.send_message(
             players[0][0],
@@ -282,7 +287,6 @@ async def start_public_game(context: ContextTypes.DEFAULT_TYPE, job):
         )
         await asyncio.sleep(3)
     
-    # Օրինակ՝ առաջին խաղացողը հաղթում է
     winner_id = players[0][0]
     await end_game(context, game_id, winner_id)
     
@@ -291,7 +295,8 @@ async def start_public_game(context: ContextTypes.DEFAULT_TYPE, job):
 # Մասնավոր խաղի մեկնարկ
 async def start_private_game(context: ContextTypes.DEFAULT_TYPE, job_or_data):
     game_id = job_or_data['game_id'] if isinstance(job_or_data, dict) else job_or_data.data['game_id']
-    conn = sqlite3.connect('lotto.db')
+    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
     c.execute("SELECT user_id FROM game_players WHERE game_id = ?", (game_id,))
@@ -321,7 +326,6 @@ async def start_private_game(context: ContextTypes.DEFAULT_TYPE, job_or_data):
         f"🎲 Մասնավոր խաղ #{game_id} սկսվեց։ {len(players)} խաղացող։"
     )
     
-    # Խաղի տրամաբանություն
     numbers = random.sample(range(1, 91), 5)
     for num in numbers:
         await context.bot.send_message(
@@ -340,7 +344,8 @@ async def handle_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text.startswith('/start game_'):
         game_id = int(update.message.text.split('_')[-1])
         user = update.effective_user
-        conn = sqlite3.connect('lotto.db')
+        db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+        conn = sqlite3.connect(db_path)
         c = conn.cursor()
         
         c.execute("SELECT status, is_private FROM games WHERE game_id = ?", (game_id,))
@@ -363,7 +368,14 @@ async def main():
     init_db()
     
     # Ստեղծել բոտի application
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = None
+    try:
+        application = Application.builder().token(BOT_TOKEN).build()
+        await application.initialize()
+        logger.info("Application սկզբնավորված է")
+    except Exception as e:
+        logger.error(f"Application ստեղծման սխալ: {e}")
+        return
     
     # Ջնջել հին webhook-ը և կարգավորել նորը
     try:
@@ -373,6 +385,7 @@ async def main():
         logger.info(f"Webhook կարգավորված է՝ {WEBHOOK_URL}")
     except Exception as e:
         logger.error(f"Webhook-ի կարգավորման սխալ: {e}")
+        await application.shutdown()
         return
     
     # Ավելացնել handler-ներ
@@ -383,6 +396,7 @@ async def main():
     
     # Գործարկել webhook
     try:
+        logger.info(f"Starting webhook on port {PORT}")
         await application.run_webhook(
             listen="0.0.0.0",
             port=PORT,
@@ -393,25 +407,27 @@ async def main():
     except Exception as e:
         logger.error(f"Webhook-ի գործարկման սխալ: {e}")
     finally:
-        # Համոզվել, որ application-ը ճիշտ փակվում է
-        await application.stop()
-        await application.updater.stop()
-        logger.info("Բոտը կանգնեցված է")
+        try:
+            if application:
+                if application.updater:
+                    await application.updater.stop()
+                await application.stop()
+                await application.shutdown()
+                logger.info("Application կանգնեցված է")
+        except Exception as e:
+            logger.error(f"Application-ի փակման սխալ: {e}")
 
 if __name__ == '__main__':
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        # Համոզվել, որ event loop-ը ճիշտ է կարգավորված
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
         loop.run_until_complete(main())
     except KeyboardInterrupt:
         logger.info("Բոտը կանգնեցված է օգտատիրոջ կողմից")
     except Exception as e:
         logger.error(f"Հիմնական սխալ: {e}")
     finally:
-        # Փակել event loop-ը
         if not loop.is_closed():
             loop.run_until_complete(loop.shutdown_asyncgens())
             loop.close()
+            logger.info("Event loop փակված է")
