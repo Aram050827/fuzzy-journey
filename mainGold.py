@@ -369,8 +369,6 @@ async def main():
     
     # Ստեղծել բոտի application
     application = Application.builder().token(BOT_TOKEN).build()
-    await application.initialize()
-    logger.info("Application սկզբնավորված է")
     
     # Ջնջել հին webhook-ը և կարգավորել նորը
     await application.bot.delete_webhook(drop_pending_updates=True)
@@ -385,39 +383,39 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keyboard))
     
     # Գործարկել webhook
-    logger.info(f"Starting webhook on port {PORT}")
-    await application.start()
-    await application.updater.start_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="",
-        webhook_url=WEBHOOK_URL,
-        drop_pending_updates=True
-    )
-    logger.info("Webhook գործարկված է")
-    
-    # Սպասել մինչև բոտը կանգնեցվի
     try:
-        await application.updater.run_forever()
-    except KeyboardInterrupt:
-        logger.info("Բոտը կանգնեցված է օգտատիրոջ կողմից")
+        logger.info(f"Starting webhook on port {PORT}")
+        await application.start()
+        await application.updater.start_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path="",
+            webhook_url=WEBHOOK_URL,
+            drop_pending_updates=True
+        )
+        logger.info("Webhook գործարկված է")
+        
+        # Սպասել մինչև բոտը կանգնեցվի
+        while True:
+            await asyncio.sleep(3600)  # Պահել գործընթացը կենդանի
     except Exception as e:
         logger.error(f"Webhook-ի գործարկման սխալ: {e}")
     finally:
-        await application.updater.stop()
-        await application.stop()
-        await application.shutdown()
-        logger.info("Application կանգնեցված է")
+        try:
+            await application.updater.stop()
+            await application.stop()
+            await application.shutdown()
+            logger.info("Application կանգնեցված է")
+        except Exception as e:
+            logger.error(f"Application-ի փակման սխալ: {e}")
 
 if __name__ == '__main__':
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(main())
     except Exception as e:
         logger.error(f"Հիմնական սխալ: {e}")
     finally:
-        if not loop.is_closed():
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.close()
-            logger.info("Event loop փակված է")
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+        logger.info("Event loop փակված է")
