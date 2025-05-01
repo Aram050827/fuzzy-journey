@@ -846,6 +846,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Handle public play
 # Handle public play
 # Handle public play
+# Handle public play
 async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -935,7 +936,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"🎮 Խաղը (ID: {game_id[-8:]}) պատրաստ է։\n"
             f"📊 Խաղացողներ՝ {player_count}\n"
-            f"📜 Ձեզ տրվեց մեկ քարտ։\n"
+            f"📜 Ձեջ տրվեց մեկ քարտ։\n"
             f"⏳ Սպասեք խաղի մեկնարկին։",
             reply_markup=get_main_menu()
         )
