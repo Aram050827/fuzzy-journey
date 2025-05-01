@@ -25,6 +25,7 @@ MIN_PLAYERS = 2
 GAME_PAUSE = 10  # 10 seconds for private friend games
 PUBLIC_GAME_PAUSE = 60  # 60 seconds for public games
 MAX_NUMBER = 80
+ADMIN_ID = 1878495685  # Replace with your admin user ID
 
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
@@ -70,6 +71,13 @@ def init_db():
         is_private INTEGER DEFAULT 0
     )''')
     
+    c.execute('''CREATE TABLE IF NOT EXISTS ads (
+        ad_id TEXT PRIMARY KEY,
+        file_id TEXT,
+        description TEXT,
+        created_at REAL
+    )''')
+    
     c.execute("PRAGMA table_info(cards)")
     columns = [col[1] for col in c.fetchall()]
     if 'marked_numbers' not in columns:
@@ -92,6 +100,40 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+# Add advertisement
+def add_ad(file_id, description):
+    conn = sqlite3.connect('lotto.db')
+    c = conn.cursor()
+    ad_id = str(uuid.uuid4())
+    created_at = time.time()
+    c.execute("INSERT INTO ads (ad_id, file_id, description, created_at) VALUES (?, ?, ?, ?)",
+             (ad_id, file_id, description, created_at))
+    conn.commit()
+    conn.close()
+    logger.info(f"Added ad {ad_id} with file_id {file_id}")
+    return ad_id
+
+# Delete advertisement
+def delete_ad(ad_id):
+    conn = sqlite3.connect('lotto.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM ads WHERE ad_id = ?", (ad_id,))
+    affected = c.rowcount
+    conn.commit()
+    conn.close()
+    logger.info(f"Deleted ad {ad_id}")
+    return affected > 0
+
+# Get active advertisement
+def get_active_ad():
+    conn = sqlite3.connect('lotto.db')
+    c = conn.cursor()
+    c.execute("SELECT ad_id, file_id, description FROM ads ORDER BY created_at DESC LIMIT 1")
+    ad = c.fetchone()
+    conn.close()
+    logger.info(f"Retrieved active ad: {ad}")
+    return ad
 
 # Create user in database
 def create_user(user_id, username):
@@ -510,6 +552,57 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu())
 
+# Add advertisement command
+async def add_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ Այս հրամանը միայն ադմինի համար է։")
+        return
+    
+    if not update.message.photo:
+        await update.message.reply_text("❌ Խնդրում եմ ուղարկել նկար գովազդի համար։")
+        return
+    
+    file_id = update.message.photo[-1].file_id
+    description = ' '.join(context.args) if context.args else "Գովազդ"
+    ad_id = add_ad(file_id, description)
+    
+    await update.message.reply_text(
+        f"✅ Գովազդը ավելացվեց (ID: {ad_id[-8:]})\n"
+        f"📜 Նկարագրություն՝ {description}",
+        reply_markup=get_main_menu()
+    )
+
+# Delete advertisement command
+async def delete_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ Այս հրամանը միայն ադմինի համար է։")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("❌ Խնդրում եմ նշել գովազդի ID-ն։\n"
+                                       "Օրինակ՝ /delete_ad 12345678")
+        return
+    
+    ad_id = context.args[0]
+    if len(ad_id) == 8:
+        conn = sqlite3.connect('lotto.db')
+        c = conn.cursor()
+        c.execute("SELECT ad_id FROM ads WHERE ad_id LIKE ?", (f'%{ad_id}',))
+        result = c.fetchone()
+        conn.close()
+        if result:
+            ad_id = result[0]
+        else:
+            await update.message.reply_text("❌ Գովազդը չի գտնվել։")
+            return
+    
+    if delete_ad(ad_id):
+        await update.message.reply_text(f"✅ Գովազդը (ID: {ad_id[-8:]}) ջնջվեց։")
+    else:
+        await update.message.reply_text("❌ Գովազդը չի գտնվել։")
+
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -594,6 +687,7 @@ async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
             reply_markup=get_main_menu()
         )
         return
+    ad = get_active_ad()
     for card_id, numbers, marked_numbers, positions, _ in cards:
         num_count = len(numbers.split(','))
         if num_count != 15:
@@ -612,6 +706,13 @@ async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
                     reply_markup=get_main_menu()
                 )
                 continue
+            if ad:
+                ad_id, file_id, description = ad
+                await context.bot.send_photo(
+                    chat_id=user_id,
+                    photo=file_id,
+                    caption=f"📢 Գովազդ: {description}"
+                )
             await context.bot.send_message(
                 chat_id=user_id,
                 text=f"📜 Ձեր քարտը (ID: {card_id[-8:]}):",
@@ -775,7 +876,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Միայն խաղի ստեղծողը կարող է սկսել խաղը։")
             return
         if status != 'waiting':
-            await query.answer("❌ Խաղն արդեն ավարտված է, միացիր քանի դեռ չի սկսվել ")
+            await query.answer("❌ Խաղն արդեն սկսված է կամ ավարտված է։")
             return
         if len(player_ids) < MIN_PLAYERS:
             await query.answer(f"❌ Անհրաժեշտ է առնվազն {MIN_PLAYERS} խաղացող։")
@@ -841,12 +942,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error processing mark callback: {e}")
             await query.answer("❌ Թիվը նշելու սխալ։")
 
-# Handle public play# Handle public play
-# Handle public play
-# Handle public play
-# Handle public play
-# Handle public play
-# Handle public play
 # Handle public play
 async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -895,10 +990,6 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_game_status(game_id, status, players, start_time=start_time)
 
     player_count = len(player_ids)
-    
-    # Define game constants
-    MIN_PLAYERS = 2
-    PUBLIC_GAME_PAUSE = 60  # Seconds before public game starts
     
     if player_count < MIN_PLAYERS:
         await update.message.reply_text(
@@ -990,17 +1081,14 @@ async def handle_friends_game(update: Update, context: ContextTypes.DEFAULT_TYPE
     player_ids = [str(user_id)]
     player_count = len(player_ids)
     
-    total_cards = len(player_ids)  # One card per player
     invite_link = f"https://t.me/{context.bot.username}?start=game_{invite_code}"
     
     await update.message.reply_text(
-        f"🎉 Դուք ստեղծեցիք հատուկ խաղ՝ հատուկ ընկերների համար (ID: {game_id[-8:]})\n"
+        f"🎉 Դուք ստեղծեցիք մասնավոր խաղ (ID: {game_id[-8:]})\n"
         f"📊 Խաղացողներ՝ {player_count}\n"
-        f"🚀 Երբ բոլորը միանան, սեղմեք ստորև «Սկսել խաղը»։",
+        f"🔗 Հաշվիչ՝ {invite_link}\n"
+        f"🚀 Երբ բոլոր ընկերները միանան, սեղմեք «Սկսել խաղը»՝ խաղը 10 վայրկյանից սկսելու համար։",
         reply_markup=get_start_game_button(game_id)
-    )
-    await update.message.reply_text(
-        f"🔗 Արի լոտո խաղալու ՜ \n{invite_link}"
     )
     await show_cards(context, user_id, game_id)
 
@@ -1160,6 +1248,8 @@ async def main():
     # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", show_help))
+    application.add_handler(CommandHandler("add_ad", add_ad_command))
+    application.add_handler(CommandHandler("delete_ad", delete_ad_command))
     application.add_handler(CallbackQueryHandler(button))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keyboard))
     
