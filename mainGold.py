@@ -369,6 +369,8 @@ async def main():
     
     # Ստեղծել բոտի application
     application = Application.builder().token(BOT_TOKEN).build()
+    await application.initialize()
+    logger.info("Application սկզբնավորված է")
     
     # Ջնջել հին webhook-ը և կարգավորել նորը
     await application.bot.delete_webhook(drop_pending_updates=True)
