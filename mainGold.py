@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Կարգավորումներ
-BOT_TOKEN = os.getenv("7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
 
