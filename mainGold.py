@@ -914,20 +914,12 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Game {game_id} waiting for players: {player_count}/{MIN_PLAYERS}")
         return
 
-    if status == 'waiting':
-        start_time = time.time() + PUBLIC_GAME_PAUSE
-        update_game_status(game_id, 'preparing', players, start_time=start_time)
-        for pid in player_ids:
-            try:
-                await context.bot.send_message(
-                    pid,
-                    f"🚀 Խաղը սկսվում է 10 վայրկյանից։\n"
-                    f"📊 Խաղացողներ՝ {player_count}\n"
-                    reply_markup=ReplyKeyboardRemove()
+   await update.message.reply_text(
+                    f"🚀 Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։\n"
+                    f"📊 Խաղացողներ՝ {len(players)}",
+                    reply_markup=get_main_menu()
                 )
-            except Exception as e:
-                logger.warning(f"Failed to notify player {pid}: {e}")
-        context.job_queue.run_once(start_game, max(1, start_time - time.time()), data={'game_id': game_id})
+                context.job_queue.run_once(start_public_game, PUBLIC_GAME_PAUSE, data={'game_id': game_id})
     else:
         await update.message.reply_text(
             f"🎮 Խաղը (ID: {game_id[-8:]}) պատրաստ է։\n"
