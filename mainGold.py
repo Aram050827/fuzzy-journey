@@ -921,7 +921,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     pid,
-                    f"🚀 Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։\n"
+                    f"🚀 Խաղը սկսվում է 10 վայրկյանից։\n"
                     f"📊 Խաղացողներ՝ {player_count}\n"
                     reply_markup=ReplyKeyboardRemove()
                 )
