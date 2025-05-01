@@ -841,7 +841,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error processing mark callback: {e}")
             await query.answer("❌ Թիվը նշելու սխալ։")
 
-# Handle public play
+# Handle public play# Handle public play
 async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -913,15 +913,21 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_cards(context, user_id, game_id)
         logger.info(f"Game {game_id} waiting for players: {player_count}/{MIN_PLAYERS}")
         return
-
-   await update.message.reply_text(
-                    f"🚀 Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։\n"
-                    f"📊 Խաղացողներ՝ {len(players)}",
-                    reply_markup=get_main_menu()
-                )
-                context.job_queue.run_once(start_public_game, PUBLIC_GAME_PAUSE, data={'game_id': game_id})
-    else:
+    
+    # Define PUBLIC_GAME_PAUSE
+    PUBLIC_GAME_PAUSE = 60  # Seconds before public game starts
+    
+    if status == 'waiting':
+        start_time = time.time() + PUBLIC_GAME_PAUSE
+        update_game_status(game_id, 'preparing', players, start_time=start_time)
         await update.message.reply_text(
+            f"🚀 Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։\n"
+            f"📊 Խաղացողներ՝ {player_count}",
+            reply_markup=get_main_menu()
+        )
+        context.job_queue.run_once(start_game, max(1, start_time - time.time()), data={'game_id': game_id})
+    else:
+        await CALLBACK.update.message.reply_text(
             f"🎮 Խաղը (ID: {game_id[-8:]}) պատրաստ է։\n"
             f"📊 Խաղացողներ՝ {player_count}\n"
             f"📜 Ձեզ տրվեց մեկ քարտ։\n"
