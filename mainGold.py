@@ -1105,7 +1105,7 @@ async def handle_friends_game(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=get_start_game_button(game_id)
     )
     await update.message.reply_text(
-        f"🔗 Արի լոտո խաղալու։\n{invite_link}"
+        f"🔗 Արի լոտո խաղանք \n{invite_link}"
     )
 
     await show_cards(context, user_id, game_id)
