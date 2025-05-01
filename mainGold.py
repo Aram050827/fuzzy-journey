@@ -402,9 +402,11 @@ async def main():
             await asyncio.sleep(3600)  # Պահել գործընթացը կենդանի
     except Exception as e:
         logger.error(f"Webhook-ի գործարկման սխալ: {e}")
+        raise
     finally:
         try:
-            await application.updater.stop()
+            if application.updater.running:
+                await application.updater.stop()
             await application.stop()
             await application.shutdown()
             logger.info("Application կանգնեցված է")
@@ -412,7 +414,8 @@ async def main():
             logger.error(f"Application-ի փակման սխալ: {e}")
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(main())
     except Exception as e:
