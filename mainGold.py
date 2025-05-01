@@ -283,7 +283,7 @@ async def start_public_game(context: ContextTypes.DEFAULT_TYPE, job):
     for num in numbers:
         await context.bot.send_message(
             players[0][0],
-            f"🎰 ԹԻՎ՝ {num}"
+            f"🎰 Հանված թիվ՝ {num}"
         )
         await asyncio.sleep(3)
     
@@ -368,25 +368,15 @@ async def main():
     init_db()
     
     # Ստեղծել բոտի application
-    application = None
-    try:
-        application = Application.builder().token(BOT_TOKEN).build()
-        await application.initialize()
-        logger.info("Application սկզբնավորված է")
-    except Exception as e:
-        logger.error(f"Application ստեղծման սխալ: {e}")
-        return
+    application = Application.builder().token(BOT_TOKEN).build()
+    await application.initialize()
+    logger.info("Application սկզբնավորված է")
     
     # Ջնջել հին webhook-ը և կարգավորել նորը
-    try:
-        await application.bot.delete_webhook(drop_pending_updates=True)
-        logger.info("Հին webhook ջնջված է")
-        await application.bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True)
-        logger.info(f"Webhook կարգավորված է՝ {WEBHOOK_URL}")
-    except Exception as e:
-        logger.error(f"Webhook-ի կարգավորման սխալ: {e}")
-        await application.shutdown()
-        return
+    await application.bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Հին webhook ջնջված է")
+    await application.bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True)
+    logger.info(f"Webhook կարգավորված է՝ {WEBHOOK_URL}")
     
     # Ավելացնել handler-ներ
     application.add_handler(CommandHandler("start", start))
@@ -395,35 +385,35 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keyboard))
     
     # Գործարկել webhook
+    logger.info(f"Starting webhook on port {PORT}")
+    await application.start()
+    await application.updater.start_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="",
+        webhook_url=WEBHOOK_URL,
+        drop_pending_updates=True
+    )
+    logger.info("Webhook գործարկված է")
+    
+    # Սպասել մինչև բոտը կանգնեցվի
     try:
-        logger.info(f"Starting webhook on port {PORT}")
-        await application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path="",
-            webhook_url=WEBHOOK_URL,
-            drop_pending_updates=True
-        )
+        await application.updater.run_forever()
+    except KeyboardInterrupt:
+        logger.info("Բոտը կանգնեցված է օգտատիրոջ կողմից")
     except Exception as e:
         logger.error(f"Webhook-ի գործարկման սխալ: {e}")
     finally:
-        try:
-            if application:
-                if application.updater:
-                    await application.updater.stop()
-                await application.stop()
-                await application.shutdown()
-                logger.info("Application կանգնեցված է")
-        except Exception as e:
-            logger.error(f"Application-ի փակման սխալ: {e}")
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
+        logger.info("Application կանգնեցված է")
 
 if __name__ == '__main__':
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(main())
-    except KeyboardInterrupt:
-        logger.info("Բոտը կանգնեցված է օգտատիրոջ կողմից")
     except Exception as e:
         logger.error(f"Հիմնական սխալ: {e}")
     finally:
