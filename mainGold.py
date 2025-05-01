@@ -847,6 +847,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Handle public play
 # Handle public play
 # Handle public play
+# Handle public play
 async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -891,21 +892,9 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(user_id) not in player_ids:
         player_ids.append(str(user_id))
         players = ','.join(player_ids)
-        for pid in player_ids:
-            if int(pid) != user_id:
-                try:
-                    await context.bot.send_message(
-                        pid,
-                        f"🔔 Նոր խաղացող ({user.first_name}) միացավ խաղին։ Ընդհանուր՝ {len(player_ids)} խաղացող։",
-                        reply_markup=get_main_menu()
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to notify player {pid}: {e}")
         update_game_status(game_id, status, players, start_time=start_time)
 
     player_count = len(player_ids)
-    
-    total_cards = len(player_ids)  # One card per player
     
     # Define game constants
     MIN_PLAYERS = 2
@@ -919,6 +908,19 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ Խաղը կսկսվի, երբ բավարար խաղացողներ միանան։",
             reply_markup=get_main_menu()
         )
+        # Notify all players of player count
+        for pid in player_ids:
+            if int(pid) != user_id:
+                try:
+                    await context.bot.send_message(
+                        pid,
+                        f"🔔 Նոր խաղացող ({user.first_name}) միացավ խաղին։\n"
+                        f"📊 Ընդհանուր՝ {player_count}/{MIN_PLAYERS} խաղացող։\n"
+                        f"⏳ Սպասում ենք {MIN_PLAYERS - player_count} խաղացողի։",
+                        reply_markup=get_main_menu()
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to notify player {pid}: {e}")
         await show_cards(context, user_id, game_id)
         logger.info(f"Game {game_id} waiting for players: {player_count}/{MIN_PLAYERS}")
         return
@@ -931,17 +933,43 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📊 Խաղացողներ՝ {player_count}",
             reply_markup=get_main_menu()
         )
+        # Notify all players of player count and remaining time
+        for pid in player_ids:
+            if int(pid) != user_id:
+                try:
+                    await context.bot.send_message(
+                        pid,
+                        f"🔔 Նոր խաղացող ({user.first_name}) միացավ խաղին։\n"
+                        f"📊 Ընդհանուր՝ {player_count} խաղացող։\n"
+                        f"⏳ Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։",
+                        reply_markup=get_main_menu()
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to notify player {pid}: {e}")
         context.job_queue.run_once(start_game, max(1, start_time - time.time()), data={'game_id': game_id})
     else:
+        remaining_time = int(max(0, start_time - time.time())) if start_time else 0
         await update.message.reply_text(
             f"🎮 Խաղը (ID: {game_id[-8:]}) պատրաստ է։\n"
             f"📊 Խաղացողներ՝ {player_count}\n"
-            f"📜 Ձեջ տրվեց մեկ քարտ։\n"
-            f"⏳ Սպասեք խաղի մեկնարկին։",
+            f"📜 Ձեզ տրվեց մեկ քարտ։\n"
+            f"⏳ Մնացել է {remaining_time} վայրկյան մինչև մեկնարկը։",
             reply_markup=get_main_menu()
         )
+        # Notify all players of player count and remaining time
+        for pid in player_ids:
+            if int(pid) != user_id:
+                try:
+                    await context.bot.send_message(
+                        pid,
+                        f"🔔 Նոր խաղացող ({user.first_name}) միացավ խաղին։\n"
+                        f"📊 Ընդհանուր՝ {player_count} խաղացող։\n"
+                        f"⏳ Մնացել է {remaining_time} վայրկյան մինչև մեկնարկը։",
+                        reply_markup=get_main_menu()
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to notify player {pid}: {e}")
         await show_cards(context, user_id, game_id)
-
 
 # Handle friends game
 async def handle_friends_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
