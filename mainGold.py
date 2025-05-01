@@ -25,7 +25,7 @@ MIN_PLAYERS = 2
 GAME_PAUSE = 10  # 10 seconds for private friend games
 PUBLIC_GAME_PAUSE = 60  # 60 seconds for public games
 MAX_NUMBER = 80
-ADMIN_ID = 1878495685  # Replace with your admin user ID
+ADMIN_ID = 7793801123  # Replace with your admin user ID
 
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
@@ -906,6 +906,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(
                     pid,
                     f"🚀 Խաղը սկսվում է {GAME_PAUSE} վայրկյանից։\n"
+                    f"📜 Ստուգեք Ձեր քարտը։",
                     reply_markup=ReplyKeyboardRemove()
                 )
             except Exception as e:
