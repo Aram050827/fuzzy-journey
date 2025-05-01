@@ -25,7 +25,7 @@ MIN_PLAYERS = 2
 GAME_PAUSE = 10  # 10 seconds for private friend games
 PUBLIC_GAME_PAUSE = 60  # 60 seconds for public games
 MAX_NUMBER = 80
-ADMIN_ID = 7793801123  # Replace with your admin user ID
+ADMIN_ID = 1878495685  # Replace with your admin user ID
 
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
@@ -523,12 +523,12 @@ async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "1. **Միացեք խաղին**՝ սեղմելով «Խաղալ» (պատահական խաղացողներով) կամ «Խաղալ ընկերների հետ»։\n"
         "2. **Քարտ**։ Քանի որ սա ԴԵՄՈ խաղ է յուրաքանչյուր խաղացող ավտոմատ ստանում է մեկ քարտ՝ 15 թվով։\n"
         "3. **Խաղի մեկնարկ**։ Խաղը սկսվում է 2 կամ ավելի խաղացողներով։ Ընկերական խաղում ընկերների ժամանումից հետո պետք է սեղմել «Սկսել խաղը»։\n"
-        "4. ** environs**։ Բոտը պատահականորեն հանում է թվեր (1-80)։\n"
+        "4. **Թվեր**։ Բոտը պատահականորեն հանում է թվեր (1-80)։\n"
         "5. **Նշեք թվերը**։ Երբ տեսնեք Ձեր թիվը, անմիջապես սեղմեք նրա վրա։\n"
         "6. **Հաղթող**։ Առաջինը, ով նշում է իր քարտի բոլոր 15 թվերը, հաղթում է։\n"
         "7. **Մրցանակ**։ Շահույթը կախված է խաղացողների քանակից, բայց քանի որ սա ԴԵՄՈ տարբերակն է, դրամական շահում չի սպասվում։\n"
         "8. **Խաղի ավարտ**։ Հաղթողի ի հայտ գալուց հետո բոլոր քարտերը ջնջվում են։\n"
-        "9. **Ընկերների հետ խաղ**։ Ստեղծեք խաղ, կիսվեք հղումով և սկսեք վաելել խաղը հարազատ միջավայրում։"
+        "9. **Ընկերների հետ խաղ**։ Ստեղծեք խաղ, կիսվեք հղումով և սկսեք վայելել խաղը հարազատ միջավայրում։"
     )
     await update.message.reply_text(rules, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu())
 
@@ -544,7 +544,7 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 **Ինչպե՞ս խաղալ ընկերների հետ**։\n"
         "- Ստեղծեք խաղ՝ սեղմելով «Խաղալ ընկերների հետ»։ Կստանաք հղում։\n"
         "- Կիսվեք հղումով ընկերների հետ։ Նրանք ավտոմատ կմիանան խաղին։\n"
-        "- Որպես ստեղծող՝ սեղմեք «🚀 Սկսել խաղը» և խաղը 10 վայրկյանից կսկսվի ։\n\n"
+        "- Որպես ստեղծող՝ սեղմեք «🚀 Սկսել խաղը» և խաղը 10 վայրկյանից կսկսվի։\n\n"
         "🔹 **Խնդիրներ կա՞ն**։\n"
         "- Եթե քարտը չի ցուցադրվում, լքեք խաղը և նորից միացեք։\n\n"
         "🔹 **Այլ խնդիրների, առաջարկների կամ գովազդի համար ⬇️**։\n"
@@ -911,11 +911,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception as e:
                 logger.warning(f"Failed to notify player {pid}: {e}")
-        context.job_queue.run_once(start_game, max(1, start_time - time.time()), data={'game_id': game_id})
+        context.job_queue.run_once(start_game, GAME_PAUSE, data={'game_id': game_id}, name=f"start_game_{game_id}")
         await query.message.edit_text(
             f"🚀 Խաղը (ID: {game_id[-8:]}) սկսվում է {GAME_PAUSE} վայրկյանից։",
             reply_markup=None
         )
+        logger.info(f"Scheduled game {game_id} to start in {GAME_PAUSE} seconds")
     elif query.data.startswith('mark_'):
         try:
             _, short_game_id, short_card_id, number = query.data.split('_')
@@ -1055,7 +1056,8 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                 except Exception as e:
                     logger.warning(f"Failed to notify player {pid}: {e}")
-        context.job_queue.run_once(start_game, max(1, start_time - time.time()), data={'game_id': game_id})
+        context.job_queue.run_once(start_game, PUBLIC_GAME_PAUSE, data={'game_id': game_id}, name=f"start_game_{game_id}")
+        logger.info(f"Scheduled public game {game_id} to start in {PUBLIC_GAME_PAUSE} seconds")
     else:
         remaining_time = int(max(0, start_time - time.time())) if start_time else 0
         await update.message.reply_text(
@@ -1108,7 +1110,7 @@ async def handle_friends_game(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=get_start_game_button(game_id)
     )
     await update.message.reply_text(
-        f"🔗 Արի լոտո խաղալու ՜ \n{invite_link}"
+        f"🔗 Արի լոտո խաղալու։\n{invite_link}"
     )
 
     await show_cards(context, user_id, game_id)
@@ -1121,10 +1123,19 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id, winne
         return
     player_ids = current_game[2].split(',')
     waiting_ids = current_game[5].split(',') if current_game[5] else []
+    
+    # Fetch winner's name from Telegram
+    try:
+        winner_user = await context.bot.get_chat(winner_id)
+        winner_name = winner_user.first_name
+        if winner_user.last_name:
+            winner_name += f" {winner_user.last_name}"
+    except Exception as e:
+        logger.warning(f"Failed to fetch winner name for {winner_id}: {e}")
+        winner_name = "Հաղթող"  # Fallback name
+
     conn = sqlite3.connect('lotto.db')
     c = conn.cursor()
-    c.execute("SELECT username FROM users WHERE user_id = ?", (winner_id,))
-    winner_name = c.fetchone()[0]
     c.execute("SELECT numbers, marked_numbers FROM cards WHERE card_id = ?", (winner_card_id,))
     card_data = c.fetchone()
     conn.close()
@@ -1186,7 +1197,7 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 pid,
                 "🎮 Խաղը սկսվեց։\n\n"
-                "🍀 Հաջողություն եմ մաղթում քեզ ։",
+                "🍀 Հաջողություն եմ մաղթում Ձեզ։",
                 reply_markup=ReplyKeyboardRemove()
             )
         except Exception as e:
