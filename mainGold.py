@@ -845,6 +845,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Handle public play
 # Handle public play
 # Handle public play
+# Handle public play
 async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
