@@ -521,14 +521,14 @@ async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rules = (
         "🎲 *Հայկական Լոտո Խաղի Կանոններ* 🎉\n\n"
         "1. **Միացեք խաղին**՝ սեղմելով «Խաղալ» (պատահական խաղացողներով) կամ «Խաղալ ընկերների հետ»։\n"
-        "2. **Քարտ**։ Յուրաքանչյուր խաղացող ավտոմատ ստանում է մեկ քարտ՝ 15 թվով (3×8 վանդակ)։\n"
-        "3. **Խաղի մեկնարկ**։ Խաղը սկսվում է 2 կամ ավելի խաղացողներով։ Ընկերական խաղում ստեղծողը սեղմում է «Սկսել խաղը»։\n"
-        "4. ** environs**։ Բոտը պատահականորեն հայտարարում է թվեր (1-80)։\n"
-        "5. **Նշեք թվերը**։ Սեղմեք Ձեր քարտի վրա հայտարարված թվերի վրա։\n"
+        "2. **Քարտ**։ Քանի որ սա ԴԵՄՈ խաղ է յուրաքանչյուր խաղացող ավտոմատ ստանում է մեկ քարտ՝ 15 թվով։\n"
+        "3. **Խաղի մեկնարկ**։ Խաղը սկսվում է 2 կամ ավելի խաղացողներով։ Ընկերական խաղում ընկերների ժամանումից հետո պետք է սեղմել «Սկսել խաղը»։\n"
+        "4. ** environs**։ Բոտը պատահականորեն հանում է թվեր (1-80)։\n"
+        "5. **Նշեք թվերը**։ Երբ տեսնեք Ձեր թիվը, անմիջապես սեղմեք նրա վրա։\n"
         "6. **Հաղթող**։ Առաջինը, ով նշում է իր քարտի բոլոր 15 թվերը, հաղթում է։\n"
-        "7. **Մրցանակ**։ Շահույթը կախված է խաղացողների քանակից։\n"
-        "8. **Խաղի ավարտ**։ Խաղն ավարտվում է, երբ հաղթող է հայտնաբերվում, և բոլոր քարտերը ջնջվում են։\n"
-        "9. **Ընկերների հետ խաղ**։ Ստեղծեք խաղ, կիսվեք հղումով և սկսեք, երբ բոլորը միանան։"
+        "7. **Մրցանակ**։ Շահույթը կախված է խաղացողների քանակից, բայց քանի որ սա ԴԵՄՈ տարբերակն է, դրամական շահում չի սպասվում։\n"
+        "8. **Խաղի ավարտ**։ Հաղթողի ի հայտ գալուց հետո բոլոր քարտերը ջնջվում են։\n"
+        "9. **Ընկերների հետ խաղ**։ Ստեղծեք խաղ, կիսվեք հղումով և սկսեք վաելել խաղը հարազատ միջավայրում։"
     )
     await update.message.reply_text(rules, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu())
 
@@ -544,11 +544,11 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 **Ինչպե՞ս խաղալ ընկերների հետ**։\n"
         "- Ստեղծեք խաղ՝ սեղմելով «Խաղալ ընկերների հետ»։ Կստանաք հղում։\n"
         "- Կիսվեք հղումով ընկերների հետ։ Նրանք ավտոմատ կմիանան խաղին։\n"
-        "- Որպես ստեղծող՝ սեղմեք «🚀 Սկսել խաղը»՝ խաղը 10 վայրկյանից սկսելու համար։\n\n"
+        "- Որպես ստեղծող՝ սեղմեք «🚀 Սկսել խաղը» և խաղը 10 վայրկյանից կսկսվի ։\n\n"
         "🔹 **Խնդիրներ կա՞ն**։\n"
-        "- Եթե քարտը չի ցուցադրվում, լքեք խաղը և նորից միացեք։\n"
-        "- Կապվեք մեզ հետ՝ @LottoSupport։\n\n"
-        "🎉 Զվարճացեք և հաջողություն։"
+        "- Եթե քարտը չի ցուցադրվում, լքեք խաղը և նորից միացեք։\n\n"
+        "🔹 **Այլ խնդիրների, առաջարկների կամ գովազդի համար ⬇️**։\n"
+        "- Կապվեք մեզ հետ՝ @LottogramSupport։\n\n"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu())
 
@@ -559,7 +559,7 @@ async def add_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Այս հրամանը միայն ադմինի համար է։")
         return
     
-    description = ' '.join(context.args) if context.args else "Գովազդ"
+    description = ' '.join(context.args) if context.args else ""
     context.user_data['awaiting_ad_photo'] = description
     await update.message.reply_text(
         f"📸 Խնդրում եմ ուղարկել նկար գովազդի համար։\n"
@@ -634,7 +634,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not game:
             await update.message.reply_text(
-                "❌ Այս հղումը սխալ է կամ խաղն ավարտվել է։\n"
+                "❌ Այս հղումը սխալ է կամ խաղն արդեն ավարտվել է։\n"
                 "🎮 Ստեղծեք նոր խաղ կամ միացեք այլ խաղի։",
                 reply_markup=get_main_menu()
             )
@@ -659,7 +659,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 update_game_status(game_id, status, waiting_players=','.join(waiting_ids))
             await update.message.reply_text(
                 "🎮 Խաղն արդեն սկսվել է։\n"
-                "⏳ Սեղմեք «Սպասել»՝ որպեսզի զգուշացնենք նոր խաղի մասին",
+                "⏳ Սեղմեք «Սպասել»՝ որպեսզի տեղեկացվեք հաջորդ խաղի մասին",
                 reply_markup=get_waiting_menu()
             )
             return
@@ -690,8 +690,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         welcome_message = (
             f"👋 Բարև, {user.first_name}։ Ես Հայկական Լոտո բոտն եմ (թերևս ԴԵՄՈ տարբերակը)։ 🎲\n"
-            "🎮 Խաղա ընկերների հետ կամ միացիր պատահական խաղացողներին։\n"
-            "🔽 Ընտրիր գործողություն՝"
+            "🎮 Ծանոթացիր խաղի կանոններին, խաղա ընկերների հետ կամ միացիր պատահական խաղացողներին։\n"
+            "🔽 Ընտրիր գործողություն՝ մենյուից"
         )
         await update.message.reply_text(welcome_message, reply_markup=get_main_menu())
 
@@ -701,7 +701,7 @@ async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
     if not cards:
         await context.bot.send_message(
             user_id,
-            "❌ Դուք քարտ չունեք։ Կապվեք աջակցության հետ՝ @lottogramsupport:",
+            "❌ Դուք քարտ չունեք։ Կապվեք աջակցության հետ՝ @LottogramSupport:",
             reply_markup=get_main_menu()
         )
         return
@@ -711,7 +711,7 @@ async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
         if num_count != 15:
             await context.bot.send_message(
                 user_id,
-                f"❌ Քարտը (ID: {card_id[-8:]}) սխալ է։ Կապվեք աջակցության հետ՝ @lottogramsupport:",
+                f"❌ Քարտը (ID: {card_id[-8:]}) սխալ է։ Կապվեք աջակցության հետ՝ @LottogramSupport:",
                 reply_markup=get_main_menu()
             )
             continue
@@ -720,7 +720,7 @@ async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
             if keyboard is None:
                 await context.bot.send_message(
                     user_id,
-                    f"❌ Քարտը (ID: {card_id[-8:]}) չի ցուցադրվում։ Կապվեք աջակցության հետ՝ @lottogramsupport։",
+                    f"❌ Քարտը (ID: {card_id[-8:]}) չի ցուցադրվում։ Կապվեք աջակցության հետ՝ @LottogramSupport։",
                     reply_markup=get_main_menu()
                 )
                 continue
@@ -729,7 +729,7 @@ async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
                 await context.bot.send_photo(
                     chat_id=user_id,
                     photo=file_id,
-                    caption=f"📢 Գովազդ: {description}"
+                    caption=f"{description}"
                 )
             await context.bot.send_message(
                 chat_id=user_id,
@@ -740,7 +740,7 @@ async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
             logger.error(f"Failed to send card {card_id}: {e}")
             await context.bot.send_message(
                 user_id,
-                "❌ Քարտը ցուցադրելու սխալ։ Կապվեք աջակցության հետ՝ @lottogramsupport։",
+                "❌ Քարտը ցուցադրելու սխալ։ Կապվեք աջակցության հետ՝ @LottogramSupport։",
                 reply_markup=get_main_menu()
             )
 
@@ -770,7 +770,7 @@ async def handle_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     update_game_status(game_id, status, waiting_players=','.join(waiting_ids))
                 await update.message.reply_text(
                     "🎮 Խաղն ընթացքի մեջ է։\n"
-                    "⏳ Սեղմեք «Սպասել»՝ սպասման ցուցակ մտնելու համար։",
+                    "⏳ Սեղմեք «Սպասել»՝ որպեսզի տեղեկացվեք հաջորդ խաղի մասին։",
                     reply_markup=get_waiting_menu()
                 )
                 return
@@ -783,7 +783,7 @@ async def handle_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if game_running:
             await update.message.reply_text(
                 "🎮 Խաղն արդեն ընթացքի մեջ է։\n"
-                "⏳ Սեղմեք «Սպասել», որպեսզի Ձեզ տեղեկացնենք հաջորդ խաղի սկսվելու մասին։",
+                "⏳ Սեղմեք «Սպասել», որպեսզի Ձեզ տեղեկացվեք հաջորդ խաղի մասին։",
                 reply_markup=get_waiting_menu()
             )
         else:
@@ -811,7 +811,7 @@ async def handle_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         logger.warning(f"Unknown keyboard input from user {user_id}: {text}")
         await update.message.reply_text(
-            "❌ Խնդրում եմ օգտագործել ստեղնաշարի կոճակները։",
+            "❌ Խնդրում եմ օգտագործել մենյուի կոճակները։",
             reply_markup=get_main_menu()
         )
 
@@ -874,7 +874,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await context.bot.send_message(
             user_id,
-            "🔽 Ընտրիր գործողություն՝",
+            "🔽 Ընտրիր գործողություն՝ մենյուից",
             reply_markup=get_main_menu()
         )
     elif query.data == 'noop':
@@ -906,7 +906,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(
                     pid,
                     f"🚀 Խաղը սկսվում է {GAME_PAUSE} վայրկյանից։\n"
-                    f"📜 Ստուգեք Ձեր քարտը։",
                     reply_markup=ReplyKeyboardRemove()
                 )
             except Exception as e:
@@ -945,7 +944,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             keyboard = get_card_keyboard(cid, numbers, marked_numbers, game_id, positions)
                             if keyboard is None:
                                 await query.message.edit_text(
-                                    "❌ Քարտը ցուցադրելու սխալ։ Կապվեք աջակցության հետ՝ @LottoSupport։"
+                                    "❌ Քարտը ցուցադրելու սխալ։ Կապվեք աջակցության հետ՝ @LottogramSupport։"
                                 )
                                 return
                             await query.message.edit_text(
@@ -992,7 +991,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_game_status(game_id, status, waiting_players=','.join(waiting_ids))
             await update.message.reply_text(
                 "🎮 Խաղն ընթացքի մեջ է։\n"
-                "⏳ Սեղմեք «Սպասել»՝ սպասման ցուցակ մտնելու համար։",
+                "⏳ Սեղմեք «Սպասել»՝ որպեսզի տեղեկացվեք նոր խաղի մասին։",
                 reply_markup=get_waiting_menu()
             )
         else:
@@ -1012,7 +1011,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if player_count < MIN_PLAYERS:
         await update.message.reply_text(
             f"⏳ Սպասում ենք խաղացողներին։\n"
-            f"📊 Խաղացողներ՝ {player_count}/{MIN_PLAYERS}\n"
+            f"📊 Խաղացողներ՝ {player_count}\n"
             f"📜 Ձեզ տրվեց մեկ քարտ։\n"
             f"⏳ Խաղը կսկսվի, երբ բավարար խաղացողներ միանան։",
             reply_markup=get_main_menu()
@@ -1024,7 +1023,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(
                         pid,
                         f"🔔 Նոր խաղացող ({user.first_name}) միացավ խաղին։\n"
-                        f"📊 Ընդհանուր՝ {player_count}/{MIN_PLAYERS} խաղացող։\n"
+                        f"📊 Ընդհանուր՝ {player_count} խաղացող։\n"
                         f"⏳ Սպասում ենք {MIN_PLAYERS - player_count} խաղացողի։",
                         reply_markup=get_main_menu()
                     )
@@ -1048,7 +1047,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     await context.bot.send_message(
                         pid,
-                        f"🔔 Նոր խաղացող ({user.first_name}) միացավ խաղին։\n"
+                        f"🔔 Նոր խաղացող միացավ խաղին։\n"
                         f"📊 Ընդհանուր՝ {player_count} խաղացող։\n"
                         f"⏳ Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։",
                         reply_markup=get_main_menu()
@@ -1071,7 +1070,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     await context.bot.send_message(
                         pid,
-                        f"🔔 Նոր խաղացող ({user.first_name}) միացավ խաղին։\n"
+                        f"🔔 Նոր խաղացող միացավ խաղին։\n"
                         f"📊 Ընդհանուր՝ {player_count} խաղացող։\n"
                         f"⏳ Մնացել է {remaining_time} վայրկյան մինչև մեկնարկը։",
                         reply_markup=get_main_menu()
@@ -1104,10 +1103,13 @@ async def handle_friends_game(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(
         f"🎉 Դուք ստեղծեցիք մասնավոր խաղ (ID: {game_id[-8:]})\n"
         f"📊 Խաղացողներ՝ {player_count}\n"
-        f"🔗 Հաշվիչ՝ {invite_link}\n"
-        f"🚀 Երբ բոլոր ընկերները միանան, սեղմեք «Սկսել խաղը»՝ խաղը 10 վայրկյանից սկսելու համար։",
+        f"🚀 Երբ բոլոր ընկերները միանան, սեղմեք «Սկսել խաղը»։",
         reply_markup=get_start_game_button(game_id)
     )
+    await update.message.reply_text(
+        f"🔗 Արի լոտո խաղալու ՜ \n{invite_link}"
+    )
+
     await show_cards(context, user_id, game_id)
 
 # End game
@@ -1137,14 +1139,14 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id, winne
                 await context.bot.send_message(
                     pid,
                     f"🎉 Շնորհավորում ենք, {winner_name}։ Դուք հաղթեցիք։\n{card_text}\n"
-                    "📜 Բոլոր քարտերը ջնջվեցին։ Ստեղծե՞լ նոր խաղ։",
+                    "📜 Բոլոր քարտերը ջնջվեցին։ Սկսե՞լ նոր խաղ։",
                     reply_markup=get_main_menu()
                 )
             else:
                 await context.bot.send_message(
                     pid,
                     f"🥇 Խաղն ավարտվեց։ Հաղթող՝ {winner_name}\n{card_text}\n"
-                    "📜 Բոլոր քարտերը ջնջվեցին։ Ստեղծե՞լ նոր խաղ։",
+                    "📜 Բոլոր քարտերը ջնջվեցին։ Սկսե՞լ նոր խաղ։",
                     reply_markup=get_main_menu()
                 )
         except Exception as e:
@@ -1156,7 +1158,7 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id, winne
                 await context.bot.send_message(
                     pid,
                     "🏁 Խաղն ավարտվեց։\n"
-                    "🎮 Ստեղծեք նոր խաղ կամ միացեք այլ խաղի։",
+                    "🎮 Սկսեք նոր խաղ կամ միացեք այլ խաղի։",
                     reply_markup=get_main_menu()
                 )
             except Exception as e:
@@ -1182,8 +1184,8 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 pid,
-                "🎮 Խաղը սկսվեց։\n"
-                "🍀 Հաջողություն բոլոր խաղացողներին։",
+                "🎮 Խաղը սկսվեց։\n\n"
+                "🍀 Հաջողություն եմ մաղթում քեզ ։",
                 reply_markup=ReplyKeyboardRemove()
             )
         except Exception as e:
@@ -1201,7 +1203,7 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 pid,
-                "🎲 Այժմ սկսում ենք հանել թվերը։"
+                "🎲 Սկսում եմ հանել թվերը․․․"
             )
         except Exception as e:
             logger.warning(f"Failed to notify player {pid}: {e}")
