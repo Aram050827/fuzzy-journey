@@ -844,6 +844,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Handle public play# Handle public play
 # Handle public play
 # Handle public play
+# Handle public play
 async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -904,6 +905,10 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     total_cards = len(player_ids)  # One card per player
     
+    # Define game constants
+    MIN_PLAYERS = 2
+    PUBLIC_GAME_PAUSE = 60  # Seconds before public game starts
+    
     if player_count < MIN_PLAYERS:
         await update.message.reply_text(
             f"⏳ Սպասում ենք խաղացողներին։\n"
@@ -915,20 +920,15 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_cards(context, user_id, game_id)
         logger.info(f"Game {game_id} waiting for players: {player_count}/{MIN_PLAYERS}")
         return
-
+    
     if status == 'waiting':
         start_time = time.time() + PUBLIC_GAME_PAUSE
         update_game_status(game_id, 'preparing', players, start_time=start_time)
-        for pid in player_ids:
-            try:
-                await context.bot.send_message(
-                    pid,
-                    f"🚀 Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։\n"
-                    f"📊 Խաղացողներ՝ {player_count}\n"
-                    reply_markup=ReplyKeyboardRemove()
-                )
-            except Exception as e:
-                logger.warning(f"Failed to notify player {pid}: {e}")
+        await update.message.reply_text(
+            f"🚀 Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։\n"
+            f"📊 Խաղացողներ՝ {player_count}",
+            reply_markup=get_main_menu()
+        )
         context.job_queue.run_once(start_game, max(1, start_time - time.time()), data={'game_id': game_id})
     else:
         await update.message.reply_text(
