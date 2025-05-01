@@ -37,7 +37,7 @@ if not BOT_TOKEN:
     logger.error("BOT_TOKEN environment variable is not set. Please set it.")
     raise ValueError("BOT_TOKEN is required.")
 
-# Database initialization (unchanged)
+# Database initialization
 def init_db():
     conn = sqlite3.connect('lotto.db')
     c = conn.cursor()
@@ -134,6 +134,45 @@ def get_active_ad():
     conn.close()
     logger.info(f"Retrieved active ad: {ad}")
     return ad
+
+# Create user in database
+def create_user(user_id, username):
+    conn = sqlite3.connect('lotto.db')
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+    conn.commit()
+    conn.close()
+
+# Get user's cards
+def get_user_cards(user_id):
+    conn = sqlite3.connect('lotto.db')
+    c = conn.cursor()
+    c.execute("SELECT card_id, numbers, marked_numbers, positions, marked_time FROM cards WHERE user_id = ?", (user_id,))
+    cards = c.fetchall()
+    conn.close()
+    for card_id, numbers, marked_numbers, positions, marked_time in cards:
+        num_count = len(numbers.split(','))
+        if num_count != 15:
+            logger.warning(f"Card {card_id} for user {user_id} has {num_count} numbers instead of 15.")
+    return cards
+
+# Delete user's cards
+def delete_user_cards(user_id):
+    conn = sqlite3.connect('lotto.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM cards WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    logger.info(f"Deleted all cards for user {user_id}")
+
+# Delete all cards after game ends
+def delete_all_cards():
+    conn = sqlite3.connect('lotto.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM cards")
+    conn.commit()
+    conn.close()
+    logger.info("Deleted all cards after game end")
 
 # Generate a card for a user
 def generate_card(user_id):
@@ -302,76 +341,6 @@ def mark_number(card_id, number):
     conn.close()
     logger.warning(f"Number {number} not in card {card_id} numbers: {','.join(numbers)}")
     return False
-
-# Add advertisement command
-async def add_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ Այս հրամանը միայն ադմինի համար է։")
-        return
-    
-    description = ' '.join(context.args) if context.args else "Գովազդ"
-    context.user_data['awaiting_ad_photo'] = description
-    await update.message.reply_text(
-        f"📸 Խնդրում եմ ուղարկել նկար գովազդի համար։\n"
-        f"📜 Նկարագրություն՝ {description}",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    logger.info(f"User {user_id} initiated add_ad with description: {description}")
-
-# Handle photo for advertisement
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID or 'awaiting_ad_photo' not in context.user_data:
-        logger.info(f"Photo received from user {user_id}, but not processed (not admin or not awaiting photo)")
-        return
-    
-    if not update.message.photo:
-        await update.message.reply_text("❌ Խնդրում եմ ուղարկել նկար։")
-        logger.warning(f"Non-photo message received from user {user_id} while awaiting ad photo")
-        return
-    
-    file_id = update.message.photo[-1].file_id
-    description = context.user_data.pop('awaiting_ad_photo')
-    ad_id = add_ad(file_id, description)
-    
-    await update.message.reply_text(
-        f"✅ Գովազդը ավելացվեց (ID: {ad_id[-8:]})\n"
-        f"📜 Նկարագրություն՝ {description}",
-        reply_markup=get_main_menu()
-    )
-    logger.info(f"Ad {ad_id} added by user {user_id} with file_id {file_id}")
-
-# Delete advertisement command
-async def delete_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ Այս հրամանը միայն ադմինի համար է։")
-        return
-    
-    if not context.args:
-        await update.message.reply_text("❌ Խնդրում եմ նշել գովազդի ID-ն։\n"
-                                       "Օրինակ՝ /delete_ad 12345678")
-        return
-    
-    ad_id = context.args[0]
-    if len(ad_id) == 8:
-        conn = sqlite3.connect('lotto.db')
-        c = conn.cursor()
-        c.execute("SELECT ad_id FROM ads WHERE ad_id LIKE ?", (f'%{ad_id}',))
-        result = c.fetchone()
-        conn.close()
-        if result:
-            ad_id = result[0]
-        else:
-            await update.message.reply_text("❌ Գովազդը չի գտնվել։")
-            return
-    
-    if delete_ad(ad_id):
-        await update.message.reply_text(f"✅ Գովազդը (ID: {ad_id[-8:]}) ջնջվեց։")
-    else:
-        await update.message.reply_text("❌ Գովազդը չի գտնվել։")
-
 
 # Check for winners
 async def check_all_winners(context: ContextTypes.DEFAULT_TYPE, game_id):
@@ -554,7 +523,7 @@ async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "1. **Միացեք խաղին**՝ սեղմելով «Խաղալ» (պատահական խաղացողներով) կամ «Խաղալ ընկերների հետ»։\n"
         "2. **Քարտ**։ Յուրաքանչյուր խաղացող ավտոմատ ստանում է մեկ քարտ՝ 15 թվով (3×8 վանդակ)։\n"
         "3. **Խաղի մեկնարկ**։ Խաղը սկսվում է 2 կամ ավելի խաղացողներով։ Ընկերական խաղում ստեղծողը սեղմում է «Սկսել խաղը»։\n"
-        "4. **Թվեր**։ Բոտը պատահականորեն հայտարարում է թվեր (1-80)։\n"
+        "4. ** environs**։ Բոտը պատահականորեն հայտարարում է թվեր (1-80)։\n"
         "5. **Նշեք թվերը**։ Սեղմեք Ձեր քարտի վրա հայտարարված թվերի վրա։\n"
         "6. **Հաղթող**։ Առաջինը, ով նշում է իր քարտի բոլոր 15 թվերը, հաղթում է։\n"
         "7. **Մրցանակ**։ Շահույթը կախված է խաղացողների քանակից։\n"
@@ -590,12 +559,29 @@ async def add_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Այս հրամանը միայն ադմինի համար է։")
         return
     
+    description = ' '.join(context.args) if context.args else "Գովազդ"
+    context.user_data['awaiting_ad_photo'] = description
+    await update.message.reply_text(
+        f"📸 Խնդրում եմ ուղարկել նկար գովազդի համար։\n"
+        f"📜 Նկարագրություն՝ {description}",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    logger.info(f"User {user_id} initiated add_ad with description: {description}")
+
+# Handle photo for advertisement
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID or 'awaiting_ad_photo' not in context.user_data:
+        logger.info(f"Photo received from user {user_id}, but not processed (not admin or not awaiting photo)")
+        return
+    
     if not update.message.photo:
-        await update.message.reply_text("❌ Խնդրում եմ ուղարկել նկար գովազդի համար։")
+        await update.message.reply_text("❌ Խնդրում եմ ուղարկել նկար։")
+        logger.warning(f"Non-photo message received from user {user_id} while awaiting ad photo")
         return
     
     file_id = update.message.photo[-1].file_id
-    description = ' '.join(context.args) if context.args else "Գովազդ"
+    description = context.user_data.pop('awaiting_ad_photo')
     ad_id = add_ad(file_id, description)
     
     await update.message.reply_text(
@@ -603,6 +589,7 @@ async def add_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📜 Նկարագրություն՝ {description}",
         reply_markup=get_main_menu()
     )
+    logger.info(f"Ad {ad_id} added by user {user_id} with file_id {file_id}")
 
 # Delete advertisement command
 async def delete_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1115,14 +1102,12 @@ async def handle_friends_game(update: Update, context: ContextTypes.DEFAULT_TYPE
     invite_link = f"https://t.me/{context.bot.username}?start=game_{invite_code}"
     
     await update.message.reply_text(
-        f"🎉 Դուք ստեղծեցիք հատուկ խաղ՝ հատուկ ընկերների համար (ID: {game_id[-8:]})\n"
+        f"🎉 Դուք ստեղծեցիք մասնավոր խաղ (ID: {game_id[-8:]})\n"
         f"📊 Խաղացողներ՝ {player_count}\n"
-        f"🚀 Երբ բոլորը միանան, սեղմեք ստորև «Սկսել խաղը»։",
+        f"🔗 Հաշվիչ՝ {invite_link}\n"
+        f"🚀 Երբ բոլոր ընկերները միանան, սեղմեք «Սկսել խաղը»՝ խաղը 10 վայրկյանից սկսելու համար։",
         reply_markup=get_start_game_button(game_id)
     )
-    await update.message.reply_text(
-        f"🔗 Արի լոտո խաղալու ՜ \n{invite_link}"
-)
     await show_cards(context, user_id, game_id)
 
 # End game
@@ -1283,6 +1268,7 @@ async def main():
     application.add_handler(CommandHandler("help", show_help))
     application.add_handler(CommandHandler("add_ad", add_ad_command))
     application.add_handler(CommandHandler("delete_ad", delete_ad_command))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(CallbackQueryHandler(button))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keyboard))
     
