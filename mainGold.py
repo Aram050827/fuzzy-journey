@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Կարգավորումներ
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
+BOT_TOKEN = os.getenv("7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
 
@@ -32,7 +32,7 @@ if not BOT_TOKEN:
 
 # Տվյալների բազայի սկզբնավորում
 def init_db():
-    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    db_path = 'lotto.db'
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -63,7 +63,7 @@ def init_db():
 
 # Օգտատիրոջ ստեղծում
 def create_user(user_id, first_name):
-    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    db_path = 'lotto.db'
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (user_id, first_name))
@@ -77,7 +77,7 @@ def generate_card():
 
 # Խաղի ստեղծում
 def create_game(creator_id, is_private):
-    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    db_path = 'lotto.db'
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("INSERT INTO games (creator_id, is_private, status, start_time) VALUES (?, ?, ?, ?)",
@@ -89,7 +89,7 @@ def create_game(creator_id, is_private):
 
 # Խաղացողի ավելացում
 def add_player(game_id, user_id, card):
-    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    db_path = 'lotto.db'
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO game_players (game_id, user_id, card) VALUES (?, ?, ?)",
@@ -126,7 +126,7 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Խաղի ավարտ
 async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id):
-    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    db_path = 'lotto.db'
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
@@ -180,7 +180,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
     
     if query.data == 'play':
-        db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+        db_path = 'lotto.db'
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
         c.execute("SELECT game_id FROM games WHERE status = 'waiting' AND is_private = 0")
@@ -205,7 +205,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         card = generate_card()
         add_player(game_id, user.id, card)
         
-        keyboard = [[InlineKeyboardButton("🚀 Սկսել խաղըintel", callback_data=f'start_private_{game_id}')]]
+        keyboard = [[InlineKeyboardButton("🚀 Սկսել խաղը", callback_data=f'start_private_{game_id}')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text(
             f"🎉 Մասնավոր խաղ #{game_id} ստեղծվեց։ Ձեր քարտը՝ {card}\n"
@@ -220,7 +220,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_private_game(context, {'game_id': game_id})
     
     elif query.data == 'wait':
-        db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+        db_path = 'lotto.db'
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
         c.execute("SELECT game_id FROM games WHERE status = 'waiting' AND is_private = 0")
@@ -248,7 +248,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Հանրային խաղի մեկնարկ
 async def start_public_game(context: ContextTypes.DEFAULT_TYPE, job):
     game_id = job.data['game_id']
-    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    db_path = 'lotto.db'
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
@@ -283,7 +283,7 @@ async def start_public_game(context: ContextTypes.DEFAULT_TYPE, job):
     for num in numbers:
         await context.bot.send_message(
             players[0][0],
-            f"🎰 Հանված թիվ՝ {num}"
+            f"🎰 ԹԻՎ՝ {num}"
         )
         await asyncio.sleep(3)
     
@@ -295,7 +295,7 @@ async def start_public_game(context: ContextTypes.DEFAULT_TYPE, job):
 # Մասնավոր խաղի մեկնարկ
 async def start_private_game(context: ContextTypes.DEFAULT_TYPE, job_or_data):
     game_id = job_or_data['game_id'] if isinstance(job_or_data, dict) else job_or_data.data['game_id']
-    db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+    db_path = 'lotto.db'
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
@@ -344,7 +344,7 @@ async def handle_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text.startswith('/start game_'):
         game_id = int(update.message.text.split('_')[-1])
         user = update.effective_user
-        db_path = '/data/lotto.db' if os.getenv("RENDER") else 'lotto.db'
+        db_path = 'lotto.db'
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
         
