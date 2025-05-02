@@ -28,7 +28,7 @@ MAX_NUMBER = 80
 ADMIN_ID = 1878495685  # Replace with your admin user ID
 
 # Configuration
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7564418813:AAECv8DC1l_6FUvO9iaLpQMZCe2VeqabcUE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
 
