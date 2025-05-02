@@ -15,6 +15,7 @@ from telegram.ext import (
     ContextTypes,
 )
 from telegram.constants import ParseMode
+import threading
 
 # Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -28,128 +29,142 @@ MAX_NUMBER = 80
 ADMIN_ID = 1878495685  # Replace with your admin user ID
 
 # Configuration
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7564418813:AAECv8DC1l_6FUvO9iaLpQMZCe2VeqabcUE")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
+DB_PATH = "/var/data/lotto.db"  # Persistent disk path for Render
 
 # Check token
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN environment variable is not set. Please set it.")
     raise ValueError("BOT_TOKEN is required.")
 
+# SQLite lock for thread safety
+db_lock = threading.Lock()
+
 # Database initialization
 def init_db():
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT,
-        balance INTEGER DEFAULT 0
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS cards (
-        card_id TEXT PRIMARY KEY,
-        user_id INTEGER,
-        numbers TEXT,
-        marked_numbers TEXT DEFAULT '',
-        positions TEXT DEFAULT '',
-        marked_time REAL DEFAULT 0,
-        FOREIGN KEY(user_id) REFERENCES users(user_id)
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS games (
-        game_id TEXT PRIMARY KEY,
-        status TEXT,
-        players TEXT,
-        current_number INTEGER,
-        last_message_id INTEGER,
-        drawn_numbers TEXT DEFAULT '',
-        start_time REAL,
-        waiting_players TEXT DEFAULT '',
-        invite_code TEXT DEFAULT '',
-        is_private INTEGER DEFAULT 0
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS ads (
-        ad_id TEXT PRIMARY KEY,
-        file_id TEXT,
-        description TEXT,
-        created_at REAL
-    )''')
-    
-    c.execute("PRAGMA table_info(cards)")
-    columns = [col[1] for col in c.fetchall()]
-    if 'marked_numbers' not in columns:
-        c.execute("ALTER TABLE cards ADD COLUMN marked_numbers TEXT DEFAULT ''")
-    if 'positions' not in columns:
-        c.execute("ALTER TABLE cards ADD COLUMN positions TEXT DEFAULT ''")
-    if 'marked_time' not in columns:
-        c.execute("ALTER TABLE cards ADD COLUMN marked_time REAL DEFAULT 0")
-    
-    c.execute("PRAGMA table_info(games)")
-    columns = [col[1] for col in c.fetchall()]
-    if 'start_time' not in columns:
-        c.execute("ALTER TABLE games ADD COLUMN start_time REAL")
-    if 'waiting_players' not in columns:
-        c.execute("ALTER TABLE games ADD COLUMN waiting_players TEXT DEFAULT ''")
-    if 'invite_code' not in columns:
-        c.execute("ALTER TABLE games ADD COLUMN invite_code TEXT DEFAULT ''")
-    if 'is_private' not in columns:
-        c.execute("ALTER TABLE games ADD COLUMN is_private INTEGER DEFAULT 0")
-    
-    conn.commit()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.execute("PRAGMA busy_timeout = 10000")  # 10 seconds timeout
+        conn.execute("PRAGMA journal_mode = WAL")    # Enable WAL mode for better concurrency
+        c = conn.cursor()
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            balance INTEGER DEFAULT 0
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS cards (
+            card_id TEXT PRIMARY KEY,
+            user_id INTEGER,
+            numbers TEXT,
+            marked_numbers TEXT DEFAULT '',
+            positions TEXT DEFAULT '',
+            marked_time REAL DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS games (
+            game_id TEXT PRIMARY KEY,
+            status TEXT,
+            players TEXT,
+            current_number INTEGER,
+            last_message_id INTEGER,
+            drawn_numbers TEXT DEFAULT '',
+            start_time REAL,
+            waiting_players TEXT DEFAULT '',
+            invite_code TEXT DEFAULT '',
+            is_private INTEGER DEFAULT 0
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS ads (
+            ad_id TEXT PRIMARY KEY,
+            file_id TEXT,
+            description TEXT,
+            created_at REAL
+        )''')
+        
+        c.execute("PRAGMA table_info(cards)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'marked_numbers' not in columns:
+            c.execute("ALTER TABLE cards ADD COLUMN marked_numbers TEXT DEFAULT ''")
+        if 'positions' not in columns:
+            c.execute("ALTER TABLE cards ADD COLUMN positions TEXT DEFAULT ''")
+        if 'marked_time' not in columns:
+            c.execute("ALTER TABLE cards ADD COLUMN marked_time REAL DEFAULT 0")
+        
+        c.execute("PRAGMA table_info(games)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'start_time' not in columns:
+            c.execute("ALTER TABLE games ADD COLUMN start_time REAL")
+        if 'waiting_players' not in columns:
+            c.execute("ALTER TABLE games ADD COLUMN waiting_players TEXT DEFAULT ''")
+        if 'invite_code' not in columns:
+            c.execute("ALTER TABLE games ADD COLUMN invite_code TEXT DEFAULT ''")
+        if 'is_private' not in columns:
+            c.execute("ALTER TABLE games ADD COLUMN is_private INTEGER DEFAULT 0")
+        
+        conn.commit()
+        conn.close()
+    logger.info("Database initialized successfully")
 
 # Add advertisement
 def add_ad(file_id, description):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    ad_id = str(uuid.uuid4())
-    created_at = time.time()
-    c.execute("INSERT INTO ads (ad_id, file_id, description, created_at) VALUES (?, ?, ?, ?)",
-             (ad_id, file_id, description, created_at))
-    conn.commit()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        ad_id = str(uuid.uuid4())
+        created_at = time.time()
+        c.execute("INSERT INTO ads (ad_id, file_id, description, created_at) VALUES (?, ?, ?, ?)",
+                 (ad_id, file_id, description, created_at))
+        conn.commit()
+        conn.close()
     logger.info(f"Added ad {ad_id} with file_id {file_id}")
     return ad_id
 
 # Delete advertisement
 def delete_ad(ad_id):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM ads WHERE ad_id = ?", (ad_id,))
-    affected = c.rowcount
-    conn.commit()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("DELETE FROM ads WHERE ad_id = ?", (ad_id,))
+        affected = c.rowcount
+        conn.commit()
+        conn.close()
     logger.info(f"Deleted ad {ad_id}")
     return affected > 0
 
 # Get active advertisement
 def get_active_ad():
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("SELECT ad_id, file_id, description FROM ads ORDER BY created_at DESC LIMIT 1")
-    ad = c.fetchone()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT ad_id, file_id, description FROM ads ORDER BY created_at DESC LIMIT 1")
+        ad = c.fetchone()
+        conn.close()
     logger.info(f"Retrieved active ad: {ad}")
     return ad
 
 # Create user in database
 def create_user(user_id, username):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
-    conn.commit()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+        conn.commit()
+        conn.close()
+    logger.info(f"Created/Updated user {user_id}")
 
 # Get user's cards
 def get_user_cards(user_id):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("SELECT card_id, numbers, marked_numbers, positions, marked_time FROM cards WHERE user_id = ?", (user_id,))
-    cards = c.fetchall()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT card_id, numbers, marked_numbers, positions, marked_time FROM cards WHERE user_id = ?", (user_id,))
+        cards = c.fetchall()
+        conn.close()
     for card_id, numbers, marked_numbers, positions, marked_time in cards:
         num_count = len(numbers.split(','))
         if num_count != 15:
@@ -158,187 +173,195 @@ def get_user_cards(user_id):
 
 # Delete user's cards
 def delete_user_cards(user_id):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM cards WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("DELETE FROM cards WHERE user_id = ?", (user_id,))
+        conn.commit()
+        conn.close()
     logger.info(f"Deleted all cards for user {user_id}")
 
 # Delete all cards after game ends
 def delete_all_cards():
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM cards")
-    conn.commit()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("DELETE FROM cards")
+        conn.commit()
+        conn.close()
     logger.info("Deleted all cards after game end")
 
 # Generate a card for a user
 def generate_card(user_id):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    card_id = str(uuid.uuid4())
-    
-    ranges = [
-        (1, 9), (10, 19), (20, 29), (30, 39),
-        (40, 49), (50, 59), (60, 69), (70, 80)
-    ]
-    
-    numbers_per_column = [0] * 8
-    total_numbers = 0
-    
-    while total_numbers < 15:
-        for col_idx in range(8):
-            if total_numbers >= 15:
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        card_id = str(uuid.uuid4())
+        
+        ranges = [
+            (1, 9), (10, 19), (20, 29), (30, 39),
+            (40, 49), (50, 59), (60, 69), (70, 80)
+        ]
+        
+        numbers_per_column = [0] * 8
+        total_numbers = 0
+        
+        while total_numbers < 15:
+            for col_idx in range(8):
+                if total_numbers >= 15:
+                    break
+                if numbers_per_column[col_idx] >= 3:
+                    continue
+                if random.random() < 0.5:
+                    numbers_per_column[col_idx] += 1
+                    total_numbers += 1
+        
+        while total_numbers < 15:
+            available_columns = [i for i, count in enumerate(numbers_per_column) if count < 3]
+            if not available_columns:
                 break
-            if numbers_per_column[col_idx] >= 3:
+            col_idx = random.choice(available_columns)
+            numbers_per_column[col_idx] += 1
+            total_numbers += 1
+        
+        numbers = []
+        for col_idx, (start, end) in enumerate(ranges):
+            col_numbers = random.sample(range(start, end + 1), numbers_per_column[col_idx])
+            numbers.extend(col_numbers)
+            logger.info(f"Card {card_id} column {col_idx + 1} ({start}-{end}): {col_numbers}")
+        
+        numbers.sort()
+        
+        columns = [[] for _ in range(8)]
+        for num in numbers:
+            num_int = int(num)
+            if 1 <= num_int <= 9:
+                col = 0
+            elif 10 <= num_int <= 19:
+                col = 1
+            elif 20 <= num_int <= 29:
+                col = 2
+            elif 30 <= num_int <= 39:
+                col = 3
+            elif 40 <= num_int <= 49:
+                col = 4
+            elif 50 <= num_int <= 59:
+                col = 5
+            elif 60 <= num_int <= 69:
+                col = 6
+            else:
+                col = 7
+            columns[col].append(str(num))
+        
+        positions = []
+        for col_idx, col_nums in enumerate(columns):
+            if not col_nums:
                 continue
-            if random.random() < 0.5:
-                numbers_per_column[col_idx] += 1
-                total_numbers += 1
-    
-    while total_numbers < 15:
-        available_columns = [i for i, count in enumerate(numbers_per_column) if count < 3]
-        if not available_columns:
-            break
-        col_idx = random.choice(available_columns)
-        numbers_per_column[col_idx] += 1
-        total_numbers += 1
-    
-    numbers = []
-    for col_idx, (start, end) in enumerate(ranges):
-        col_numbers = random.sample(range(start, end + 1), numbers_per_column[col_idx])
-        numbers.extend(col_numbers)
-        logger.info(f"Card {card_id} column {col_idx + 1} ({start}-{end}): {col_numbers}")
-    
-    numbers.sort()
-    
-    columns = [[] for _ in range(8)]
-    for num in numbers:
-        num_int = int(num)
-        if 1 <= num_int <= 9:
-            col = 0
-        elif 10 <= num_int <= 19:
-            col = 1
-        elif 20 <= num_int <= 29:
-            col = 2
-        elif 30 <= num_int <= 39:
-            col = 3
-        elif 40 <= num_int <= 49:
-            col = 4
-        elif 50 <= num_int <= 59:
-            col = 5
-        elif 60 <= num_int <= 69:
-            col = 6
-        else:
-            col = 7
-        columns[col].append(str(num))
-    
-    positions = []
-    for col_idx, col_nums in enumerate(columns):
-        if not col_nums:
-            continue
-        available_rows = list(range(3))
-        random.shuffle(available_rows)
-        for i, num in enumerate(col_nums):
-            if i >= len(available_rows):
-                logger.warning(f"Card {card_id}: Too many numbers in column {col_idx + 1}, skipping {num}")
-                continue
-            row = available_rows[i]
-            positions.append(f"{num}:{row}")
-    
-    numbers_str = ','.join(map(str, numbers))
-    positions_str = ','.join(positions)
-    logger.info(f"Generated card {card_id} with numbers: {numbers_str} (count: {len(numbers)})")
-    logger.info(f"Positions for card {card_id}: {positions_str}")
-    if len(numbers) != 15:
-        logger.error(f"Card {card_id} generated with incorrect number count: {len(numbers)}")
-        return None
-    
-    c.execute("INSERT INTO cards (card_id, user_id, numbers, positions) VALUES (?, ?, ?, ?)",
-             (card_id, user_id, numbers_str, positions_str))
-    conn.commit()
-    conn.close()
+            available_rows = list(range(3))
+            random.shuffle(available_rows)
+            for i, num in enumerate(col_nums):
+                if i >= len(available_rows):
+                    logger.warning(f"Card {card_id}: Too many numbers in column {col_idx + 1}, skipping {num}")
+                    continue
+                row = available_rows[i]
+                positions.append(f"{num}:{row}")
+        
+        numbers_str = ','.join(map(str, numbers))
+        positions_str = ','.join(positions)
+        logger.info(f"Generated card {card_id} with numbers: {numbers_str} (count: {len(numbers)})")
+        logger.info(f"Positions for card {card_id}: {positions_str}")
+        if len(numbers) != 15:
+            logger.error(f"Card {card_id} generated with incorrect number count: {len(numbers)}")
+            return None
+        
+        c.execute("INSERT INTO cards (card_id, user_id, numbers, positions) VALUES (?, ?, ?, ?)",
+                 (card_id, user_id, numbers_str, positions_str))
+        conn.commit()
+        conn.close()
     return card_id
 
 # Create a new game
 def create_game(invite_code, is_private=False):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    game_id = str(uuid.uuid4())
-    c.execute("INSERT INTO games (game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-             (game_id, 'waiting', '', '', None, '', invite_code, 1 if is_private else 0))
-    conn.commit()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        game_id = str(uuid.uuid4())
+        c.execute("INSERT INTO games (game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                 (game_id, 'waiting', '', '', None, '', invite_code, 1 if is_private else 0))
+        conn.commit()
+        conn.close()
     logger.info(f"Created new game with ID: {game_id}, Invite code: {invite_code}, Private: {is_private}")
     return game_id
 
 # Update game status
 def update_game_status(game_id, status, players=None, current_number=None, last_message_id=None, drawn_numbers=None, start_time=None, waiting_players=None):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    if players is not None:
-        if waiting_players is not None:
-            c.execute("UPDATE games SET status = ?, players = ?, start_time = ?, waiting_players = ? WHERE game_id = ?",
-                     (status, players, start_time, waiting_players, game_id))
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        if players is not None:
+            if waiting_players is not None:
+                c.execute("UPDATE games SET status = ?, players = ?, start_time = ?, waiting_players = ? WHERE game_id = ?",
+                         (status, players, start_time, waiting_players, game_id))
+            else:
+                c.execute("UPDATE games SET status = ?, players = ?, start_time = ? WHERE game_id = ?",
+                         (status, players, start_time, game_id))
+        elif current_number is not None:
+            c.execute("UPDATE games SET status = ?, current_number = ?, last_message_id = ?, drawn_numbers = ? WHERE game_id = ?",
+                     (status, current_number, last_message_id, drawn_numbers, game_id))
         else:
-            c.execute("UPDATE games SET status = ?, players = ?, start_time = ? WHERE game_id = ?",
-                     (status, players, start_time, game_id))
-    elif current_number is not None:
-        c.execute("UPDATE games SET status = ?, current_number = ?, last_message_id = ?, drawn_numbers = ? WHERE game_id = ?",
-                 (status, current_number, last_message_id, drawn_numbers, game_id))
-    else:
-        if waiting_players is not None:
-            c.execute("UPDATE games SET status = ?, waiting_players = ? WHERE game_id = ?",
-                     (status, waiting_players, game_id))
-        else:
-            c.execute("UPDATE games SET status = ? WHERE game_id = ?", (status, game_id))
-    conn.commit()
-    conn.close()
+            if waiting_players is not None:
+                c.execute("UPDATE games SET status = ?, waiting_players = ? WHERE game_id = ?",
+                         (status, waiting_players, game_id))
+            else:
+                c.execute("UPDATE games SET status = ? WHERE game_id = ?", (status, game_id))
+        conn.commit()
+        conn.close()
     logger.info(f"Updated game {game_id} status to {status}")
 
 # Get current public game
 def get_current_public_game():
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("SELECT game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private FROM games WHERE status != 'finished' AND is_private = 0 ORDER BY ROWID DESC LIMIT 1")
-    game = c.fetchone()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private FROM games WHERE status != 'finished' AND is_private = 0 ORDER BY ROWID DESC LIMIT 1")
+        game = c.fetchone()
+        conn.close()
     logger.info(f"Retrieved current public game: {game}")
     return game
 
 # Get game by invite code
 def get_game_by_invite_code(invite_code):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("SELECT game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private FROM games WHERE invite_code = ? AND status != 'finished'", (invite_code,))
-    game = c.fetchone()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private FROM games WHERE invite_code = ? AND status != 'finished'", (invite_code,))
+        game = c.fetchone()
+        conn.close()
     logger.info(f"Retrieved game by invite code {invite_code}: {game}")
     return game
 
 # Mark a number on a card
 def mark_number(card_id, number):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("SELECT marked_numbers, numbers FROM cards WHERE card_id = ?", (card_id,))
-    result = c.fetchone()
-    numbers = result[1].split(',')
-    number_str = str(number)
-    if number_str in numbers:
-        marked = result[0].split(',') if result[0] else []
-        if number_str not in marked:
-            marked.append(number_str)
-            marked_str = ','.join(marked)
-            current_time = time.time()
-            c.execute("UPDATE cards SET marked_numbers = ?, marked_time = ? WHERE card_id = ?",
-                     (marked_str, current_time, card_id))
-            conn.commit()
-            conn.close()
-            logger.info(f"Marked number {number} on card {card_id}. Marked numbers: {marked_str}, Time: {current_time}")
-            return True
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT marked_numbers, numbers FROM cards WHERE card_id = ?", (card_id,))
+        result = c.fetchone()
+        numbers = result[1].split(',')
+        number_str = str(number)
+        if number_str in numbers:
+            marked = result[0].split(',') if result[0] else []
+            if number_str not in marked:
+                marked.append(number_str)
+                marked_str = ','.join(marked)
+                current_time = time.time()
+                c.execute("UPDATE cards SET marked_numbers = ?, marked_time = ? WHERE card_id = ?",
+                         (marked_str, current_time, card_id))
+                conn.commit()
+                conn.close()
+                logger.info(f"Marked number {number} on card {card_id}. Marked numbers: {marked_str}, Time: {current_time}")
+                return True
+        conn.close()
     logger.warning(f"Number {number} not in card {card_id} numbers: {','.join(numbers)}")
     return False
 
@@ -367,12 +390,25 @@ async def check_all_winners(context: ContextTypes.DEFAULT_TYPE, game_id):
 
 # Get game by ID
 def get_game_by_id(game_id):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("SELECT game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private FROM games WHERE game_id = ? AND status != 'finished'", (game_id,))
-    game = c.fetchone()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private FROM games WHERE game_id = ? AND status != 'finished'", (game_id,))
+        game = c.fetchone()
+        conn.close()
     logger.info(f"Retrieved game by ID {game_id}: {game}")
+    return game
+
+# Get game for user
+def get_game_by_id_for_user(user_id):
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private FROM games WHERE status != 'finished' AND (players LIKE ? OR waiting_players LIKE ?) LIMIT 1",
+                 (f'%{user_id}%', f'%{user_id}%'))
+        game = c.fetchone()
+        conn.close()
+    logger.info(f"Retrieved game for user {user_id}: {game}")
     return game
 
 # Main menu
@@ -501,7 +537,7 @@ def get_card_keyboard(card_id, numbers, marked_numbers, game_id, positions):
             if num is None:
                 row_buttons.append(InlineKeyboardButton(" ", callback_data='noop'))
             else:
-                text = f"🟢" if num in marked else str(num)
+                text = f"✅" if num in marked else str(num)
                 callback_data = f'mark_{short_game_id}_{short_card_id}_{num}'
                 if len(callback_data.encode('utf-8')) > 64:
                     logger.error(f"Callback data too long for number {num}: {callback_data}")
@@ -519,11 +555,16 @@ def get_card_keyboard(card_id, numbers, marked_numbers, game_id, positions):
 # Show game rules
 async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rules = (
-        "🎲 *Հայկական Լոտո Խաղի Կանոններ* \n\n"
-        "🎟 Խաղաքարտերի վրա 5 շարքով 3 տողերում և 8 սյունակներում տեղավորված են 15 պատահական թվեր, տասնյակները համապատասխանում են ձախ սյունակին՝ սկսած զրոյից, 80-ը տեղավորվում է վերջին սյունակում։\n\n"
-        "Խաղի իմաստը կայանում է նրանում, որ բոտը ամեն անգամ պարկից հանում է թվեր, իսկ խաղացողները պետք է ստուգեն իրենց քարտերը և թվի համընկնման դեպքում նշեն թիվը։ 🥇 Հաղթում է այն խաղացողը, ով առաջինն է նշում բոլոր թվերը \n"
-        "**Միացեք խաղին**՝ սեղմելով *«🎮 Խաղալ»* (պատահական խաղացողներով) կամ *«Խաղալ ընկերների հետ»*։\n"
-        "*Հաճելի խաղ եմ մաղթում* 🎉"
+        "🎲 *Հայկական Լոտո Խաղի Կանոններ* 🎉\n\n"
+        "1. **Միացեք խաղին**՝ սեղմելով «Խաղալ» (պատահական խաղացողներով) կամ «Խաղալ ընկերների հետ»։\n"
+        "2. **Քարտ**։ Քանի որ սա ԴԵՄՈ խաղ է յուրաքանչյուր խաղացող ավտոմատ ստանում է մեկ քարտ՝ 15 թվով։\n"
+        "3. **Խաղի մեկնարկ**։ Խաղը սկսվում է 2 կամ ավելի խաղացողներով։ Ընկերական խաղում ընկերների ժամանումից հետո պետք է սեղմել «Սկսել խաղը»։\n"
+        "4. **Թվեր**։ Բոտը պատահականորեն հանում է թվեր (1-80)։\n"
+        "5. **Նշեք թվերը**։ Երբ տեսնեք Ձեր թիվը, անմիջապես սեղմեք նրա վրա։\n"
+        "6. **Հաղթող**։ Առաջինը, ով նշում է իր քարտի բոլոր 15 թվերը, հաղթում է։\n"
+        "7. **Մրցանակ**։ Շահույթը կախված է խաղացողների քանակից, բայց քանի որ սա ԴԵՄՈ տարբերակն է, դրամական շահում չի սպասվում։\n"
+        "8. **Խաղի ավարտ**։ Հաղթողի ի հայտ գալուց հետո բոլոր քարտերը ջնջվում են։\n"
+        "9. **Ընկերների հետ խաղ**։ Ստեղծեք խաղ, կիսվեք հղումով և սկսեք վայելել խաղը հարազատ միջավայրում։"
     )
     await update.message.reply_text(rules, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu())
 
@@ -539,7 +580,7 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 **Ինչպե՞ս խաղալ ընկերների հետ**։\n"
         "- Ստեղծեք խաղ՝ սեղմելով «Խաղալ ընկերների հետ»։ Կստանաք հղում։\n"
         "- Կիսվեք հղումով ընկերների հետ։ Նրանք ավտոմատ կմիանան խաղին։\n"
-        "- Որպես հրավիրող՝ սեղմեք «🚀 Սկսել խաղը» և խաղը 10 վայրկյանից կսկսվի։\n\n"
+        "- Որպես ստեղծող՝ սեղմեք «🚀 Սկսել խաղը» և խաղը 10 վայրկյանից կսկսվի։\n\n"
         "🔹 **Խնդիրներ կա՞ն**։\n"
         "- Եթե քարտը չի ցուցադրվում, լքեք խաղը և նորից միացեք։\n\n"
         "🔹 **Այլ խնդիրների, առաջարկների կամ գովազդի համար ⬇️**։\n"
@@ -600,11 +641,12 @@ async def delete_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     ad_id = context.args[0]
     if len(ad_id) == 8:
-        conn = sqlite3.connect('lotto.db')
-        c = conn.cursor()
-        c.execute("SELECT ad_id FROM ads WHERE ad_id LIKE ?", (f'%{ad_id}',))
-        result = c.fetchone()
-        conn.close()
+        with db_lock:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("SELECT ad_id FROM ads WHERE ad_id LIKE ?", (f'%{ad_id}',))
+            result = c.fetchone()
+            conn.close()
         if result:
             ad_id = result[0]
         else:
@@ -672,6 +714,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"🔔 Նոր խաղացող միացավ խաղին։ Ընդհանուր՝ {len(player_ids)} խաղացող։",
                         reply_markup=get_main_menu()
                     )
+                    await asyncio.sleep(0.05)  # Optimized rate limiting
                 except Exception as e:
                     logger.warning(f"Failed to notify player {pid}: {e}")
         
@@ -726,11 +769,13 @@ async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
                     photo=file_id,
                     caption=f"{description}"
                 )
+                await asyncio.sleep(0.05)  # Optimized rate limiting
             await context.bot.send_message(
                 chat_id=user_id,
                 text=f"📜 Ձեր քարտը (ID: {card_id[-8:]}):",
                 reply_markup=keyboard
             )
+            await asyncio.sleep(0.05)  # Optimized rate limiting
         except Exception as e:
             logger.error(f"Failed to send card {card_id}: {e}")
             await context.bot.send_message(
@@ -810,17 +855,6 @@ async def handle_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_menu()
         )
 
-# Get game for user
-def get_game_by_id_for_user(user_id):
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("SELECT game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private FROM games WHERE status != 'finished' AND (players LIKE ? OR waiting_players LIKE ?) LIMIT 1",
-             (f'%{user_id}%', f'%{user_id}%'))
-    game = c.fetchone()
-    conn.close()
-    logger.info(f"Retrieved game for user {user_id}: {game}")
-    return game
-
 # Handle inline buttons
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -847,6 +881,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 "🎮 Ստեղծեք նոր խաղ կամ միացեք այլ խաղի։",
                                 reply_markup=get_main_menu()
                             )
+                            await asyncio.sleep(0.05)  # Optimized rate limiting
                         except Exception as e:
                             logger.warning(f"Failed to notify player {pid}: {e}")
                     for pid in waiting_ids:
@@ -858,6 +893,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     "🎮 Ստեղծեք նոր խաղ կամ միացեք այլ խաղի։",
                                     reply_markup=get_main_menu()
                                 )
+                                await asyncio.sleep(0.05)  # Optimized rate limiting
                             except Exception as e:
                                 logger.warning(f"Failed to notify waiting player {pid}: {e}")
             elif str(user_id) in waiting_ids:
@@ -904,6 +940,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"📜 Ստուգեք Ձեր քարտը։",
                     reply_markup=ReplyKeyboardRemove()
                 )
+                await asyncio.sleep(0.05)  # Optimized rate limiting
             except Exception as e:
                 logger.warning(f"Failed to notify player {pid}: {e}")
         context.job_queue.run_once(start_game, GAME_PAUSE, data={'game_id': game_id}, name=f"start_game_{game_id}")
@@ -965,9 +1002,22 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if cards:
         delete_user_cards(user_id)
     
+    current_game = get_current_public_game()
+    if current_game and current_game[1] in ['preparing', 'running']:
+        game_id, status, players, _, _, waiting_players, _, _ = current_game
+        waiting_ids = waiting_players.split(',') if waiting_players else []
+        if str(user_id) not in waiting_ids:
+            waiting_ids.append(str(user_id))
+            update_game_status(game_id, status, waiting_players=','.join(waiting_ids))
+        await update.message.reply_text(
+            "🎮 Խաղն ընթացքի մեջ է։\n"
+            "⏳ Սեղմեք «Սպասել»՝ որպեսզի տեղեկացվեք նոր խաղի մասին։",
+            reply_markup=get_waiting_menu()
+        )
+        return
+    
     generate_card(user_id)
     
-    current_game = get_current_public_game()
     if not current_game or current_game[1] == 'finished':
         invite_code = str(uuid.uuid4())[:8]
         game_id = create_game(invite_code, is_private=False)
@@ -977,27 +1027,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     game_id, status, players, drawn_numbers, start_time, waiting_players, invite_code, is_private = current_game
     player_ids = players.split(',') if players else []
-    waiting_ids = waiting_players.split(',') if waiting_players else []
     
-    current_time = time.time()
-    game_actually_started = start_time is not None and current_time >= start_time
-
-    if status == 'running' and game_actually_started:
-        if str(user_id) not in player_ids and str(user_id) not in waiting_ids:
-            waiting_ids.append(str(user_id))
-            update_game_status(game_id, status, waiting_players=','.join(waiting_ids))
-            await update.message.reply_text(
-                "🎮 Խաղն ընթացքի մեջ է։\n"
-                "⏳ Սեղմեք «Սպասել»՝ որպեսզի տեղեկացվեք նոր խաղի մասին։",
-                reply_markup=get_waiting_menu()
-            )
-        else:
-            await update.message.reply_text(
-                "🎮 Դուք արդեն խաղի մեջ եք կամ սպասման ցուցակում եք։",
-                reply_markup=get_waiting_menu()
-            )
-        return
-
     if str(user_id) not in player_ids:
         player_ids.append(str(user_id))
         players = ','.join(player_ids)
@@ -1013,7 +1043,6 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ Խաղը կսկսվի, երբ բավարար խաղացողներ միանան։",
             reply_markup=get_main_menu()
         )
-        # Notify all players of player count
         for pid in player_ids:
             if int(pid) != user_id:
                 try:
@@ -1024,6 +1053,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"⏳ Սպասում ենք {MIN_PLAYERS - player_count} խաղացողի։",
                         reply_markup=get_main_menu()
                     )
+                    await asyncio.sleep(0.05)  # Optimized rate limiting
                 except Exception as e:
                     logger.warning(f"Failed to notify player {pid}: {e}")
         await show_cards(context, user_id, game_id)
@@ -1038,7 +1068,6 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📊 Խաղացողներ՝ {player_count}",
             reply_markup=get_main_menu()
         )
-        # Notify all players of player count and remaining time
         for pid in player_ids:
             if int(pid) != user_id:
                 try:
@@ -1049,6 +1078,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"⏳ Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։",
                         reply_markup=get_main_menu()
                     )
+                    await asyncio.sleep(0.05)  # Optimized rate limiting
                 except Exception as e:
                     logger.warning(f"Failed to notify player {pid}: {e}")
         context.job_queue.run_once(start_game, PUBLIC_GAME_PAUSE, data={'game_id': game_id}, name=f"start_game_{game_id}")
@@ -1062,7 +1092,6 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ Մնացել է {remaining_time} վայրկյան մինչև մեկնարկը։",
             reply_markup=get_main_menu()
         )
-        # Notify all players of player count and remaining time
         for pid in player_ids:
             if int(pid) != user_id:
                 try:
@@ -1073,6 +1102,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"⏳ Մնացել է {remaining_time} վայրկյան մինչև մեկնարկը։",
                         reply_markup=get_main_menu()
                     )
+                    await asyncio.sleep(0.05)  # Optimized rate limiting
                 except Exception as e:
                     logger.warning(f"Failed to notify player {pid}: {e}")
         await show_cards(context, user_id, game_id)
@@ -1105,7 +1135,7 @@ async def handle_friends_game(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=get_start_game_button(game_id)
     )
     await update.message.reply_text(
-        f"🔗 Արի լոտո խաղանք \n{invite_link}"
+        f"🔗 Արի լոտո խաղալու։\n{invite_link}"
     )
 
     await show_cards(context, user_id, game_id)
@@ -1127,13 +1157,14 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id, winne
             winner_name += f" {winner_user.last_name}"
     except Exception as e:
         logger.warning(f"Failed to fetch winner name for {winner_id}: {e}")
-        winner_name = "Հաղթող"  # Fallback name
+        winner_name = "Հաղթող"
 
-    conn = sqlite3.connect('lotto.db')
-    c = conn.cursor()
-    c.execute("SELECT numbers, marked_numbers FROM cards WHERE card_id = ?", (winner_card_id,))
-    card_data = c.fetchone()
-    conn.close()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT numbers, marked_numbers FROM cards WHERE card_id = ?", (winner_card_id,))
+        card_data = c.fetchone()
+        conn.close()
     
     card_text = f"🏆 Հաղթողի քարտ (ID: {winner_card_id[-8:]}):\n" + ', '.join(card_data[0].split(','))
     update_game_status(game_id, 'finished')
@@ -1156,6 +1187,7 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id, winne
                     "📜 Բոլոր քարտերը ջնջվեցին։ Սկսե՞լ նոր խաղ։",
                     reply_markup=get_main_menu()
                 )
+            await asyncio.sleep(0.05)  # Optimized rate limiting
         except Exception as e:
             logger.warning(f"Failed to notify player {pid}: {e}")
     
@@ -1168,6 +1200,7 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id, winne
                     "🎮 Սկսեք նոր խաղ կամ միացեք այլ խաղի։",
                     reply_markup=get_main_menu()
                 )
+                await asyncio.sleep(0.05)  # Optimized rate limiting
             except Exception as e:
                 logger.warning(f"Failed to notify waiting player {pid}: {e}")
     
@@ -1195,6 +1228,7 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE):
                 "🍀 Հաջողություն եմ մաղթում Ձեզ։",
                 reply_markup=ReplyKeyboardRemove()
             )
+            await asyncio.sleep(0.05)  # Optimized rate limiting
         except Exception as e:
             logger.warning(f"Failed to notify player {pid}: {e}")
     
@@ -1212,6 +1246,7 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE):
                 pid,
                 "🎲 Սկսում եմ հանել թվերը․․․"
             )
+            await asyncio.sleep(0.05)  # Optimized rate limiting
         except Exception as e:
             logger.warning(f"Failed to notify player {pid}: {e}")
     
@@ -1244,6 +1279,7 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.MARKDOWN
                 )
                 last_message_ids[user_id] = message.message_id
+                await asyncio.sleep(0.05)  # Optimized rate limiting
             except Exception as e:
                 logger.warning(f"Failed to send number {num} to user {user_id}: {e}")
         update_game_status(game_id, 'running', current_number=num, last_message_id=0, drawn_numbers=','.join(drawn_numbers))
@@ -1278,46 +1314,17 @@ async def main():
     application.add_handler(CommandHandler("add_ad", add_ad_command))
     application.add_handler(CommandHandler("delete_ad", delete_ad_command))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(CallbackQueryHandler(button))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keyboard))
+    application.add_handler(CallbackQueryHandler(button))
     
     # Start webhook
-    try:
-        logger.info(f"Starting webhook on port {PORT}")
-        await application.start()
-        await application.updater.start_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path="",
-            webhook_url=WEBHOOK_URL,
-            drop_pending_updates=True
-        )
-        logger.info("Webhook started")
-        
-        # Keep the process alive
-        while True:
-            await asyncio.sleep(3600)
-    except Exception as e:
-        logger.error(f"Webhook startup error: {e}")
-        raise
-    finally:
-        try:
-            if application.updater.running:
-                await application.updater.stop()
-            await application.stop()
-            await application.shutdown()
-            logger.info("Application stopped")
-        except Exception as e:
-            logger.error(f"Application shutdown error: {e}")
+    await application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="",
+        webhook_url=WEBHOOK_URL
+    )
+    logger.info(f"Application running on port {PORT}")
 
 if __name__ == '__main__':
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(main())
-    except Exception as e:
-        logger.error(f"Main error: {e}")
-    finally:
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.close()
-        logger.info("Event loop closed")
+    asyncio.run(main())
