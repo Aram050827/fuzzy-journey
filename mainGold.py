@@ -29,7 +29,7 @@ MAX_NUMBER = 80
 ADMIN_ID = 1878495685  # Replace with your admin user ID
 
 # Configuration
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7564418813:AAECv8DC1l_6FUvO9iaLpQMZCe2VeqabcUE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
 DB_PATH = "/var/data/lotto.db"  # Persistent disk path for Render
@@ -1318,13 +1318,23 @@ async def main():
     application.add_handler(CallbackQueryHandler(button))
     
     # Start webhook
-    await application.run_webhook(
+    await application.start()
+    await application.updater.start_webhook(
         listen="0.0.0.0",
         port=PORT,
         url_path="",
         webhook_url=WEBHOOK_URL
     )
     logger.info(f"Application running on port {PORT}")
+    
+    # Keep the application running
+    await asyncio.Event().wait()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+    finally:
+        loop.close()
