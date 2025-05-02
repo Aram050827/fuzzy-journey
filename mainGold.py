@@ -29,7 +29,7 @@ MAX_NUMBER = 80
 ADMIN_ID = 1878495685  # Replace with your admin user ID
 
 # Configuration
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7564418813:AAECv8DC1l_6FUvO9iaLpQMZCe2VeqabcUEE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7564418813:AAECv8DC1l_6FUvO9iaLpQMZCe2VeqabcUE")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
 DB_PATH = "/var/data/lotto.db"  # Persistent disk path for Render
@@ -575,7 +575,7 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Հայկական Լոտո բոտը զվարճալի խաղ է, որտեղ կարող եք խաղալ ընկերների կամ պատահական խաղացողների հետ։\n\n"
         "🔹 **Ինչպե՞ս սկսել**։\n"
         "- Սեղմեք «🎮 Խաղալ»՝ պատահական խաղացողների հետ խաղալու համար։\n"
-        "- Սեղմեք «🎉 Խաղալ ընկերների հետ»՝ մասնավոր խաղ ստեղծելու համար։\n"
+        "- Սեղմեք «🎉 Խաղալ ընկերների հետ»՝ մասնավոր խաղягը ստեղծեք նոր խաղ։\n"
         "- Օգտագործեք ընկերոջ հղումը՝ նրա խաղին միանալու համար։\n\n"
         "🔹 **Ինչպե՞ս խաղալ ընկերների հետ**։\n"
         "- Ստեղծեք խաղ՝ սեղմելով «Խաղալ ընկերների հետ»։ Կստանաք հղում։\n"
@@ -690,7 +690,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await show_cards(context, user_id, game_id)
             return
         
-        if status in ['running', 'preparing']:
+        if status == 'running':
             if str(user_id) not in waiting_ids:
                 waiting_ids.append(str(user_id))
                 update_game_status(game_id, status, waiting_players=','.join(waiting_ids))
@@ -802,7 +802,7 @@ async def handle_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         waiting_ids = waiting_players.split(',') if waiting_players else []
         is_creator = player_ids and player_ids[0] == str(user_id)
 
-        if game_actually_started and status in ['running', 'preparing']:
+        if game_actually_started and status == 'running':
             game_running = True
             if text in ["🎮 Խաղալ", "🎉 Խաղալ ընկերների հետ"] and str(user_id) not in player_ids:
                 if str(user_id) not in waiting_ids:
@@ -834,6 +834,12 @@ async def handle_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🎮 Դուք արդեն խաղի մեջ եք։\n"
                 "⏳ Սպասեք խաղի ավարտին կամ լքեք խաղը։",
                 reply_markup=get_waiting_menu()
+            )
+        elif current_game and current_game[7] == 1:  # is_private
+            await update.message.reply_text(
+                "🎮 Դուք արդեն մասնավոր խաղի մեջ եք։\n"
+                "⏳ Սպասեք խաղի մեկնարկին կամ լքեք խաղը։",
+                reply_markup=get_main_menu()
             )
         else:
             await handle_friends_game(update, context)
@@ -1003,7 +1009,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         delete_user_cards(user_id)
     
     current_game = get_current_public_game()
-    if current_game and current_game[1] in ['preparing', 'running']:
+    if current_game and current_game[1] == 'running':
         game_id, status, players, _, _, waiting_players, _, _ = current_game
         waiting_ids = waiting_players.split(',') if waiting_players else []
         if str(user_id) not in waiting_ids:
@@ -1035,7 +1041,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     player_count = len(player_ids)
     
-    if player_count < MIN_PLAYERS:
+    if status == 'waiting' and player_count < MIN_PLAYERS:
         await update.message.reply_text(
             f"⏳ Սպասում ենք խաղացողներին։\n"
             f"📊 Խաղացողներ՝ {player_count}\n"
@@ -1060,7 +1066,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Game {game_id} waiting for players: {player_count}/{MIN_PLAYERS}")
         return
     
-    if status == 'waiting':
+    if status == 'waiting' and player_count >= MIN_PLAYERS:
         start_time = time.time() + PUBLIC_GAME_PAUSE
         update_game_status(game_id, 'preparing', players, start_time=start_time)
         await update.message.reply_text(
@@ -1083,7 +1089,7 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     logger.warning(f"Failed to notify player {pid}: {e}")
         context.job_queue.run_once(start_game, PUBLIC_GAME_PAUSE, data={'game_id': game_id}, name=f"start_game_{game_id}")
         logger.info(f"Scheduled public game {game_id} to start in {PUBLIC_GAME_PAUSE} seconds")
-    else:
+    else:  # status == 'preparing'
         remaining_time = int(max(0, start_time - time.time())) if start_time else 0
         await update.message.reply_text(
             f"🎮 Խաղը (ID: {game_id[-8:]}) պատրաստ է։\n"
