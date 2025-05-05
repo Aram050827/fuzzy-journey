@@ -166,7 +166,7 @@ def get_user_cards(user_id):
         cards = c.fetchall()
         conn.close()
     for card_id, numbers, marked_numbers, positions, marked_time in cards:
-        num_count = len(numbers.split(','))
+        num_count = len(numbers.split(',')) if numbers else 0
         if num_count != 15:
             logger.warning(f"Card {card_id} for user {user_id} has {num_count} numbers instead of 15.")
     return cards
@@ -248,7 +248,7 @@ def generate_card(user_id):
             elif 50 <= num_int <= 59:
                 col = 5
             elif 60 <= num_int <= 69:
-                col = 6
+                col = 7
             else:
                 col = 7
             columns[col].append(str(num))
@@ -347,10 +347,18 @@ def mark_number(card_id, number):
         c = conn.cursor()
         c.execute("SELECT marked_numbers, numbers FROM cards WHERE card_id = ?", (card_id,))
         result = c.fetchone()
-        numbers = result[1].split(',')
-        number_str = str(number)
-        if number_str in numbers:
-            marked = result[0].split(',') if result[0] else []
+        if not result:
+            conn.close()
+            logger.error(f"Card {card_id} not found in database")
+            return False
+        
+        marked_numbers, numbers = result
+        numbers_list = numbers.split(',') if numbers else []
+        number_str = str(number).strip()  # Ensure number is a clean string
+        logger.info(f"Attempting to mark number {number_str} on card {card_id}. Numbers: {numbers}, Marked: {marked_numbers}")
+        
+        if number_str in numbers_list:
+            marked = marked_numbers.split(',') if marked_numbers else []
             if number_str not in marked:
                 marked.append(number_str)
                 marked_str = ','.join(marked)
@@ -359,30 +367,46 @@ def mark_number(card_id, number):
                          (marked_str, current_time, card_id))
                 conn.commit()
                 conn.close()
-                logger.info(f"Marked number {number} on card {card_id}. Marked numbers: {marked_str}, Time: {current_time}")
+                logger.info(f"Successfully marked number {number_str} on card {card_id}. New marked_numbers: {marked_str}, Time: {current_time}")
                 return True
-        conn.close()
-    logger.warning(f"Number {number} not in card {card_id} numbers: {','.join(numbers)}")
-    return False
+            else:
+                logger.info(f"Number {number_str} already marked on card {card_id}")
+                conn.close()
+                return False
+        else:
+            logger.warning(f"Number {number_str} not found in card {card_id} numbers: {numbers}")
+            conn.close()
+            return False
 
 # Check for winners
 async def check_all_winners(context: ContextTypes.DEFAULT_TYPE, game_id):
     current_game = get_game_by_id(game_id)
     if not current_game:
+        logger.warning(f"Game {game_id} not found for winner check")
         return None, None
+    
     player_ids = current_game[2].split(',')
     potential_winners = []
+    
     for user_id in player_ids:
         cards = get_user_cards(int(user_id))
         for card_id, numbers, marked_numbers, _, marked_time in cards:
-            if not marked_numbers:
+            if not marked_numbers or not numbers:
+                logger.info(f"Card {card_id} for user {user_id} has no marked numbers or numbers")
                 continue
-            marked = marked_numbers.split(',')
+            marked = marked_numbers.split(',') if marked_numbers else []
             card_numbers = numbers.split(',')
+            logger.info(f"Checking card {card_id} for user {user_id}. Numbers: {numbers}, Marked: {marked_numbers}, Marked count: {len(marked)}, Total numbers: {len(card_numbers)}")
+            
             if len(marked) == len(card_numbers) and set(marked) == set(card_numbers):
                 potential_winners.append((int(user_id), card_id, marked_time))
+            else:
+                logger.info(f"Card {card_id} not a winner. Missing marks for: {set(card_numbers) - set(marked)}")
+    
     if not potential_winners:
+        logger.info(f"No winners found for game {game_id}")
         return None, None
+    
     potential_winners.sort(key=lambda x: x[2])
     winner_id, winner_card_id, _ = potential_winners[0]
     logger.info(f"Winner detected: User {winner_id} with card {winner_card_id}")
@@ -537,7 +561,7 @@ def get_card_keyboard(card_id, numbers, marked_numbers, game_id, positions):
             if num is None:
                 row_buttons.append(InlineKeyboardButton(" ", callback_data='noop'))
             else:
-                text = f"🟢" if num in marked else str(num)
+                text = f"✅" if num in marked else str(num)
                 callback_data = f'mark_{short_game_id}_{short_card_id}_{num}'
                 if len(callback_data.encode('utf-8')) > 64:
                     logger.error(f"Callback data too long for number {num}: {callback_data}")
@@ -745,7 +769,7 @@ async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
         return
     ad = get_active_ad()
     for card_id, numbers, marked_numbers, positions, _ in cards:
-        num_count = len(numbers.split(','))
+        num_count = len(numbers.split(',')) if numbers else 0
         if num_count != 15:
             await context.bot.send_message(
                 user_id,
@@ -1176,7 +1200,6 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         start_time = time.time() + PUBLIC_GAME_PAUSE
         update_game_status(game_id, 'preparing', players, start_time=start_time)
         context.job_queue.run_once(start_game, PUBLIC_GAME_PAUSE, data={'game_id': game_id}, name=f"start_game_{game_id}")
-        # Schedule countdown updates
         context.job_queue.run_repeating(
             update_countdown,
             interval=5,
