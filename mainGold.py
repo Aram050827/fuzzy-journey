@@ -537,7 +537,7 @@ def get_card_keyboard(card_id, numbers, marked_numbers, game_id, positions):
             if num is None:
                 row_buttons.append(InlineKeyboardButton(" ", callback_data='noop'))
             else:
-                text = f"✅" if num in marked else str(num)
+                text = f"🟢" if num in marked else str(num)
                 callback_data = f'mark_{short_game_id}_{short_card_id}_{num}'
                 if len(callback_data.encode('utf-8')) > 64:
                     logger.error(f"Callback data too long for number {num}: {callback_data}")
