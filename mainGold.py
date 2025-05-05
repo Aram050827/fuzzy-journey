@@ -12,7 +12,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     filters,
-    ContextTypes, 
+    ContextTypes,
 )
 from telegram.constants import ParseMode
 import threading
@@ -29,7 +29,7 @@ MAX_NUMBER = 80
 ADMIN_ID = 1878495685  # Replace with your admin user ID
 
 # Configuration
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7564418813:AAECv8DC1l_6FUvO9iaLpQMZCe2VeqabcUE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
 DB_PATH = "/var/data/lotto.db"  # Persistent disk path for Render
@@ -575,7 +575,7 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Հայկական Լոտո բոտը զվարճալի խաղ է, որտեղ կարող եք խաղալ ընկերների կամ պատահական խաղացողների հետ։\n\n"
         "🔹 **Ինչպե՞ս սկսել**։\n"
         "- Սեղմեք «🎮 Խաղալ»՝ պատահական խաղացողների հետ խաղալու համար։\n"
-        "- Սեղմեք «🎉 Խաղալ ընկերների հետ»՝ մասնավոր խաղягը ստեղծեք նոր խաղ։\n"
+        "- Սեղմեք «🎉 Խաղալ ընկերների հետ»՝ մասնավոր խաղյալու համար։\n"
         "- Օգտագործեք ընկերոջ հղումը՝ նրա խաղին միանալու համար։\n\n"
         "🔹 **Ինչպե՞ս խաղալ ընկերների հետ**։\n"
         "- Ստեղծեք խաղ՝ սեղմելով «Խաղալ ընկերների հետ»։ Կստանաք հղում։\n"
@@ -999,6 +999,58 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error processing mark callback: {e}")
             await query.answer("❌ Թիվը նշելու սխալ։")
 
+# Update countdown for public games
+async def update_countdown(context: ContextTypes.DEFAULT_TYPE):
+    game_id = context.job.data['game_id']
+    current_game = get_game_by_id(game_id)
+    if not current_game or current_game[1] != 'preparing':
+        logger.info(f"Stopping countdown updates for game {game_id}: Game is not in preparing state")
+        return
+
+    game_id, status, players, _, start_time, _, _, is_private = current_game
+    if is_private:
+        logger.info(f"Skipping countdown update for private game {game_id}")
+        return
+
+    player_ids = players.split(',') if players else []
+    remaining_time = int(max(0, start_time - time.time()))
+
+    if remaining_time <= 0:
+        logger.info(f"Countdown ended for game {game_id}")
+        return
+
+    countdown_message = (
+        f"🎮 Խաղը (ID: {game_id[-8:]}) պատրաստ է։\n"
+        f"📊 Խաղացողներ՝ {len(player_ids)}\n"
+        f"⏳ Մնացել է {remaining_time} վայրկյան մինչև մեկնարկը։"
+    )
+
+    # Initialize or update message IDs in bot_data
+    if game_id not in context.bot_data:
+        context.bot_data[game_id] = {'countdown_message_ids': {}}
+
+    for pid in player_ids:
+        try:
+            if pid in context.bot_data[game_id]['countdown_message_ids']:
+                # Edit existing message
+                await context.bot.edit_message_text(
+                    chat_id=pid,
+                    message_id=context.bot_data[game_id]['countdown_message_ids'][pid],
+                    text=countdown_message,
+                    reply_markup=get_main_menu()
+                )
+            else:
+                # Send new message and store message ID
+                message = await context.bot.send_message(
+                    pid,
+                    countdown_message,
+                    reply_markup=get_main_menu()
+                )
+                context.bot_data[game_id]['countdown_message_ids'][pid] = message.message_id
+            await asyncio.sleep(0.05)  # Optimized rate limiting
+        except Exception as e:
+            logger.warning(f"Failed to update countdown for player {pid}: {e}")
+
 # Handle public play
 async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -1066,52 +1118,73 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Game {game_id} waiting for players: {player_count}/{MIN_PLAYERS}")
         return
     
+    remaining_time = int(max(0, start_time - time.time())) if start_time else PUBLIC_GAME_PAUSE
+    countdown_message = (
+        f"🎮 Խաղը (ID: {game_id[-8:]}) պատրաստ է։\n"
+        f"📊 Խաղացողներ՝ {player_count}\n"
+        f"⏳ Մնացել է {remaining_time} վայրկյան մինչև մեկնարկը։"
+    )
+
+    # Initialize or update message IDs in bot_data
+    if game_id not in context.bot_data:
+        context.bot_data[game_id] = {'countdown_message_ids': {}}
+
+    # Send or update countdown message for the new player
+    try:
+        message = await update.message.reply_text(
+            f"🎉 Դուք միացաք խաղին (ID: {game_id[-8:]})\n"
+            f"📜 Ձեզ տրվեց մեկ քարտ։\n"
+            f"{countdown_message}",
+            reply_markup=get_main_menu()
+        )
+        context.bot_data[game_id]['countdown_message_ids'][str(user_id)] = message.message_id
+    except Exception as e:
+        logger.error(f"Failed to send countdown message to user {user_id}: {e}")
+        await update.message.reply_text(
+            "❌ Սխալ։ Կապվեք աջակցության հետ՝ @LottogramSupport։",
+            reply_markup=get_main_menu()
+        )
+        return
+
+    # Notify existing players with updated countdown
+    for pid in player_ids:
+        if int(pid) != user_id:
+            try:
+                if pid in context.bot_data[game_id]['countdown_message_ids']:
+                    # Edit existing message
+                    await context.bot.edit_message_text(
+                        chat_id=pid,
+                        message_id=context.bot_data[game_id]['countdown_message_ids'][pid],
+                        text=countdown_message,
+                        reply_markup=get_main_menu()
+                    )
+                else:
+                    # Send new message and store message ID
+                    message = await context.bot.send_message(
+                        pid,
+                        f"🔔 Նոր խաղացող միացավ խաղին։\n{countdown_message}",
+                        reply_markup=get_main_menu()
+                    )
+                    context.bot_data[game_id]['countdown_message_ids'][pid] = message.message_id
+                await asyncio.sleep(0.05)  # Optimized rate limiting
+            except Exception as e:
+                logger.warning(f"Failed to notify player {pid}: {e}")
+
+    await show_cards(context, user_id, game_id)
+
     if status == 'waiting' and player_count >= MIN_PLAYERS:
         start_time = time.time() + PUBLIC_GAME_PAUSE
         update_game_status(game_id, 'preparing', players, start_time=start_time)
-        await update.message.reply_text(
-            f"🚀 Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։\n"
-            f"📊 Խաղացողներ՝ {player_count}",
-            reply_markup=get_main_menu()
-        )
-        for pid in player_ids:
-            if int(pid) != user_id:
-                try:
-                    await context.bot.send_message(
-                        pid,
-                        f"🔔 Նոր խաղացող միացավ խաղին։\n"
-                        f"📊 Ընդհանուր՝ {player_count} խաղացող։\n"
-                        f"⏳ Խաղը սկսվում է {PUBLIC_GAME_PAUSE} վայրկյանից։",
-                        reply_markup=get_main_menu()
-                    )
-                    await asyncio.sleep(0.05)  # Optimized rate limiting
-                except Exception as e:
-                    logger.warning(f"Failed to notify player {pid}: {e}")
         context.job_queue.run_once(start_game, PUBLIC_GAME_PAUSE, data={'game_id': game_id}, name=f"start_game_{game_id}")
-        logger.info(f"Scheduled public game {game_id} to start in {PUBLIC_GAME_PAUSE} seconds")
-    else:  # status == 'preparing'
-        remaining_time = int(max(0, start_time - time.time())) if start_time else 0
-        await update.message.reply_text(
-            f"🎮 Խաղը (ID: {game_id[-8:]}) պատրաստ է։\n"
-            f"📊 Խաղացողներ՝ {player_count}\n"
-            f"📜 Ձեզ տրվեց մեկ քարտ։\n"
-            f"⏳ Մնացել է {remaining_time} վայրկյան մինչև մեկնարկը։",
-            reply_markup=get_main_menu()
+        # Schedule countdown updates
+        context.job_queue.run_repeating(
+            update_countdown,
+            interval=5,
+            last=PUBLIC_GAME_PAUSE,
+            data={'game_id': game_id},
+            name=f"countdown_{game_id}"
         )
-        for pid in player_ids:
-            if int(pid) != user_id:
-                try:
-                    await context.bot.send_message(
-                        pid,
-                        f"🔔 Նոր խաղացող միացավ խաղին։\n"
-                        f"📊 Ընդհանուր՝ {player_count} խաղացող։\n"
-                        f"⏳ Մնացել է {remaining_time} վայրկյան մինչև մեկնարկը։",
-                        reply_markup=get_main_menu()
-                    )
-                    await asyncio.sleep(0.05)  # Optimized rate limiting
-                except Exception as e:
-                    logger.warning(f"Failed to notify player {pid}: {e}")
-        await show_cards(context, user_id, game_id)
+        logger.info(f"Scheduled public game {game_id} to start in {PUBLIC_GAME_PAUSE} seconds with countdown updates")
 
 # Handle friends game
 async def handle_friends_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1155,6 +1228,10 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id, winne
     player_ids = current_game[2].split(',')
     waiting_ids = current_game[5].split(',') if current_game[5] else []
     
+    # Clean up countdown message IDs
+    if game_id in context.bot_data:
+        del context.bot_data[game_id]
+
     # Fetch winner's name from Telegram
     try:
         winner_user = await context.bot.get_chat(winner_id)
@@ -1223,6 +1300,15 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE):
     update_game_status(game_id, 'running')
     logger.info(f"Starting game {game_id}")
     
+    # Clean up countdown message IDs
+    if game_id in context.bot_data:
+        for pid, message_id in context.bot_data[game_id].get('countdown_message_ids', {}).items():
+            try:
+                await context.bot.delete_message(chat_id=pid, message_id=message_id)
+            except Exception as e:
+                logger.warning(f"Failed to delete countdown message for player {pid}: {e}")
+        del context.bot_data[game_id]
+
     player_ids = current_game[2].split(',')
     
     # Step 1: Announce game start
