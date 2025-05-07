@@ -44,71 +44,95 @@ db_lock = threading.Lock()
 
 # Database initialization
 def init_db():
-    with db_lock:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
-        conn.execute("PRAGMA busy_timeout = 10000")  # 10 seconds timeout
-        conn.execute("PRAGMA journal_mode = WAL")    # Enable WAL mode for better concurrency
-        c = conn.cursor()
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            balance INTEGER DEFAULT 0
-        )''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS cards (
-            card_id TEXT PRIMARY KEY,
-            user_id INTEGER,
-            numbers TEXT,
-            marked_numbers TEXT DEFAULT '',
-            positions TEXT DEFAULT '',
-            marked_time REAL DEFAULT 0,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        )''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS games (
-            game_id TEXT PRIMARY KEY,
-            status TEXT,
-            players TEXT,
-            current_number INTEGER,
-            last_message_id INTEGER,
-            drawn_numbers TEXT DEFAULT '',
-            start_time REAL,
-            waiting_players TEXT DEFAULT '',
-            invite_code TEXT DEFAULT '',
-            is_private INTEGER DEFAULT 0
-        )''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS ads (
-            ad_id TEXT PRIMARY KEY,
-            file_id TEXT,
-            description TEXT,
-            created_at REAL
-        )''')
-        
-        c.execute("PRAGMA table_info(cards)")
-        columns = [col[1] for col in c.fetchall()]
-        if 'marked_numbers' not in columns:
-            c.execute("ALTER TABLE cards ADD COLUMN marked_numbers TEXT DEFAULT ''")
-        if 'positions' not in columns:
-            c.execute("ALTER TABLE cards ADD COLUMN positions TEXT DEFAULT ''")
-        if 'marked_time' not in columns:
-            c.execute("ALTER TABLE cards ADD COLUMN marked_time REAL DEFAULT 0")
-        
-        c.execute("PRAGMA table_info(games)")
-        columns = [col[1] for col in c.fetchall()]
-        if 'start_time' not in columns:
-            c.execute("ALTER TABLE games ADD COLUMN start_time REAL")
-        if 'waiting_players' not in columns:
-            c.execute("ALTER TABLE games ADD COLUMN waiting_players TEXT DEFAULT ''")
-        if 'invite_code' not in columns:
-            c.execute("ALTER TABLE games ADD COLUMN invite_code TEXT DEFAULT ''")
-        if 'is_private' not in columns:
-            c.execute("ALTER TABLE games ADD COLUMN is_private INTEGER DEFAULT 0")
-        
-        conn.commit()
-        conn.close()
-    logger.info("Database initialized successfully")
+    try:
+        # Ensure the directory for DB_PATH exists
+        db_dir = os.path.dirname(DB_PATH)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+            logger.info(f"Created directory for database: {db_dir}")
+
+        with db_lock:
+            conn = sqlite3.connect(DB_PATH, timeout=10)
+            conn.execute("PRAGMA busy_timeout = 10000")  # 10 seconds timeout
+            conn.execute("PRAGMA journal_mode = WAL")    # Enable WAL mode for better concurrency
+            c = conn.cursor()
+            
+            c.execute('''CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                balance INTEGER DEFAULT 0
+            )''')
+            
+            c.execute('''CREATE TABLE IF NOT EXISTS cards (
+                card_id TEXT PRIMARY KEY,
+                user_id INTEGER,
+                numbers TEXT,
+                marked_numbers TEXT DEFAULT '',
+                positions TEXT DEFAULT '',
+                marked_time REAL DEFAULT 0,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )''')
+            
+            c.execute('''CREATE TABLE IF NOT EXISTS games (
+                game_id TEXT PRIMARY KEY,
+                status TEXT,
+                players TEXT,
+                current_number INTEGER,
+                last_message_id INTEGER,
+                drawn_numbers TEXT DEFAULT '',
+                start_time REAL,
+                waiting_players TEXT DEFAULT '',
+                invite_code TEXT DEFAULT '',
+                is_private INTEGER DEFAULT 0
+            )''')
+            
+            c.execute('''CREATE TABLE IF NOT EXISTS ads (
+                ad_id TEXT PRIMARY KEY,
+                file_id TEXT,
+                description TEXT,
+                created_at REAL
+            )''')
+            
+            c.execute("PRAGMA table_info(cards)")
+            columns = [col[1] for col in c.fetchall()]
+            if 'marked_numbers' not in columns:
+                c.execute("ALTER TABLE cards ADD COLUMN marked_numbers TEXT DEFAULT ''")
+            if 'positions' not in columns:
+                c.execute("ALTER TABLE cards ADD COLUMN positions TEXT DEFAULT ''")
+            if 'marked_time' not in columns:
+                c.execute("ALTER TABLE cards ADD COLUMN marked_time REAL DEFAULT 0")
+            
+            c.execute("PRAGMA table_info(games)")
+            columns = [col[1] for col in c.fetchall()]
+            if 'start_time' not in columns:
+                c.execute("ALTER TABLE games ADD COLUMN start_time REAL")
+            if 'waiting_players' not in columns:
+                c.execute("ALTER TABLE games ADD COLUMN waiting_players TEXT DEFAULT ''")
+            if 'invite_code' not in columns:
+                c.execute("ALTER TABLE games ADD COLUMN invite_code TEXT DEFAULT ''")
+            if 'is_private' not in columns:
+                c.execute("ALTER TABLE games ADD COLUMN is_private INTEGER DEFAULT 0")
+            
+            conn.commit()
+            conn.close()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        raise
+
+# Verify table existence
+def verify_table(table_name):
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DB_PATH, timeout=10)
+            c = conn.cursor()
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+            result = c.fetchone()
+            conn.close()
+        return bool(result)
+    except Exception as e:
+        logger.error(f"Error verifying table {table_name}: {e}")
+        return False
 
 # Add advertisement
 def add_ad(file_id, description):
@@ -149,13 +173,25 @@ def get_active_ad():
 
 # Create user in database
 def create_user(user_id, username):
-    with db_lock:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
-        conn.commit()
-        conn.close()
-    logger.info(f"Created/Updated user {user_id}")
+    try:
+        # Verify if users table exists, reinitialize if missing
+        if not verify_table('users'):
+            logger.warning("Users table missing, attempting to reinitialize database")
+            init_db()
+        
+        with db_lock:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+            conn.commit()
+            conn.close()
+        logger.info(f"Created/Updated user {user_id}")
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error in create_user for user {user_id}: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in create_user for user {user_id}: {e}")
+        raise
 
 # Get user's cards
 def get_user_cards(user_id):
@@ -248,7 +284,7 @@ def generate_card(user_id):
             elif 50 <= num_int <= 59:
                 col = 5
             elif 60 <= num_int <= 69:
-                col = 7
+                col = 6
             else:
                 col = 7
             columns[col].append(str(num))
@@ -398,10 +434,13 @@ async def check_all_winners(context: ContextTypes.DEFAULT_TYPE, game_id):
             card_numbers = numbers.split(',')
             logger.info(f"Checking card {card_id} for user {user_id}. Numbers: {numbers}, Marked: {marked_numbers}, Marked count: {len(marked)}, Total numbers: {len(card_numbers)}")
             
-            if len(marked) == len(card_numbers) and set(marked) == set(card_numbers):
+            # Check if all numbers are marked
+            all_marked = all(num in marked for num in card_numbers)
+            if all_marked:
                 potential_winners.append((int(user_id), card_id, marked_time))
             else:
-                logger.info(f"Card {card_id} not a winner. Missing marks for: {set(card_numbers) - set(marked)}")
+                missing = [num for num in card_numbers if num not in marked]
+                logger.info(f"Card {card_id} not a winner. Missing marks for: {missing}")
     
     if not potential_winners:
         logger.info(f"No winners found for game {game_id}")
@@ -561,7 +600,7 @@ def get_card_keyboard(card_id, numbers, marked_numbers, game_id, positions):
             if num is None:
                 row_buttons.append(InlineKeyboardButton(" ", callback_data='noop'))
             else:
-                text = f"🟢" if num in marked else str(num)
+                text = f"✅" if num in marked else str(num)
                 callback_data = f'mark_{short_game_id}_{short_card_id}_{num}'
                 if len(callback_data.encode('utf-8')) > 64:
                     logger.error(f"Callback data too long for number {num}: {callback_data}")
@@ -686,76 +725,83 @@ async def delete_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
-    create_user(user_id, user.username or user.first_name)
-    delete_user_cards(user_id)
-    
-    if context.args and context.args[0].startswith("game_"):
-        invite_code = context.args[0][5:]  # Extract invite code from "game_<invite_code>"
-        game = get_game_by_invite_code(invite_code)
+    try:
+        create_user(user_id, user.username or user.first_name)
+        delete_user_cards(user_id)
         
-        if not game:
+        if context.args and context.args[0].startswith("game_"):
+            invite_code = context.args[0][5:]  # Extract invite code from "game_<invite_code>"
+            game = get_game_by_invite_code(invite_code)
+            
+            if not game:
+                await update.message.reply_text(
+                    "❌ Այս հղումը սխալ է կամ խաղն արդեն ավարտվել է։\n"
+                    "🎮 Ստեղծեք նոր խաղ կամ միացեք այլ խաղի։",
+                    reply_markup=get_main_menu()
+                )
+                return
+            
+            game_id, status, players, _, start_time, waiting_players, _, is_private = game
+            player_ids = players.split(',') if players else []
+            waiting_ids = waiting_players.split(',') if waiting_players else []
+            
+            if str(user_id) in player_ids:
+                await update.message.reply_text(
+                    f"🎮 Դուք արդեն խաղի մեջ եք (ID: {game_id[-8:]})\n"
+                    "⏳ Սպասեք խաղի մեկնարկին։",
+                    reply_markup=get_main_menu()
+                )
+                await show_cards(context, user_id, game_id)
+                return
+            
+            if status == 'running':
+                if str(user_id) not in waiting_ids:
+                    waiting_ids.append(str(user_id))
+                    update_game_status(game_id, status, waiting_players=','.join(waiting_ids))
+                await update.message.reply_text(
+                    "🎮 Խաղն արդեն սկսվել է։\n"
+                    "⏳ Սեղմեք «Սպասել»՝ որպեսզի տեղեկացվեք հաջորդ խաղի մասին",
+                    reply_markup=get_waiting_menu()
+                )
+                return
+            
+            generate_card(user_id)
+            player_ids.append(str(user_id))
+            players = ','.join(player_ids)
+            update_game_status(game_id, status, players, start_time=start_time)
+            
+            for pid in player_ids:
+                if int(pid) != user_id:
+                    try:
+                        await context.bot.send_message(
+                            pid,
+                            f"🔔 Նոր խաղացող միացավ խաղին։ Ընդհանուր՝ {len(player_ids)} խաղացող։",
+                            reply_markup=get_main_menu()
+                        )
+                        await asyncio.sleep(0.05)  # Optimized rate limiting
+                    except Exception as e:
+                        logger.warning(f"Failed to notify player {pid}: {e}")
+            
             await update.message.reply_text(
-                "❌ Այս հղումը սխալ է կամ խաղն արդեն ավարտվել է։\n"
-                "🎮 Ստեղծեք նոր խաղ կամ միացեք այլ խաղի։",
-                reply_markup=get_main_menu()
-            )
-            return
-        
-        game_id, status, players, _, start_time, waiting_players, _, is_private = game
-        player_ids = players.split(',') if players else []
-        waiting_ids = waiting_players.split(',') if waiting_players else []
-        
-        if str(user_id) in player_ids:
-            await update.message.reply_text(
-                f"🎮 Դուք արդեն խաղի մեջ եք (ID: {game_id[-8:]})\n"
-                "⏳ Սպասեք խաղի մեկնարկին։",
+                f"🎉 Դուք միացաք խաղին (ID: {game_id[-8:]})\n"
+                f"📜 Ձեզ տրվեց մեկ քարտ։\n"
+                f"⏳ Սպասեք, մինչև խաղը սկսվի։",
                 reply_markup=get_main_menu()
             )
             await show_cards(context, user_id, game_id)
-            return
-        
-        if status == 'running':
-            if str(user_id) not in waiting_ids:
-                waiting_ids.append(str(user_id))
-                update_game_status(game_id, status, waiting_players=','.join(waiting_ids))
-            await update.message.reply_text(
-                "🎮 Խաղն արդեն սկսվել է։\n"
-                "⏳ Սեղմեք «Սպասել»՝ որպեսզի տեղեկացվեք հաջորդ խաղի մասին",
-                reply_markup=get_waiting_menu()
+        else:
+            welcome_message = (
+                f"👋 Բարև, {user.first_name}։ Ես Հայկական Լոտո բոտն եմ (թերևս ԴԵՄՈ տարբերակը)։ 🎲\n"
+                "🎮 Ծանոթացիր խաղի կանոններին, խաղա ընկերների հետ կամ միացիր պատահական խաղացողներին։\n"
+                "🔽 Ընտրիր գործողություն՝ մենյուից"
             )
-            return
-        
-        generate_card(user_id)
-        player_ids.append(str(user_id))
-        players = ','.join(player_ids)
-        update_game_status(game_id, status, players, start_time=start_time)
-        
-        for pid in player_ids:
-            if int(pid) != user_id:
-                try:
-                    await context.bot.send_message(
-                        pid,
-                        f"🔔 Նոր խաղացող միացավ խաղին։ Ընդհանուր՝ {len(player_ids)} խաղացող։",
-                        reply_markup=get_main_menu()
-                    )
-                    await asyncio.sleep(0.05)  # Optimized rate limiting
-                except Exception as e:
-                    logger.warning(f"Failed to notify player {pid}: {e}")
-        
+            await update.message.reply_text(welcome_message, reply_markup=get_main_menu())
+    except Exception as e:
+        logger.error(f"Error in start command for user {user_id}: {e}")
         await update.message.reply_text(
-            f"🎉 Դուք միացաք խաղին (ID: {game_id[-8:]})\n"
-            f"📜 Ձեզ տրվեց մեկ քարտ։\n"
-            f"⏳ Սպասեք, մինչև խաղը սկսվի։",
+            "❌ Սխալ։ Կապվեք աջակցության հետ՝ @LottogramSupport։",
             reply_markup=get_main_menu()
         )
-        await show_cards(context, user_id, game_id)
-    else:
-        welcome_message = (
-            f"👋 Բարև, {user.first_name}։ Ես Հայկական Լոտո բոտն եմ (թերևս ԴԵՄՈ տարբերակը)։ 🎲\n"
-            "🎮 Ծանոթացիր խաղի կանոններին, խաղա ընկերների հետ կամ միացիր պատահական խաղացողներին։\n"
-            "🔽 Ընտրիր գործողություն՝ մենյուից"
-        )
-        await update.message.reply_text(welcome_message, reply_markup=get_main_menu())
 
 # Show user's cards
 async def show_cards(context: ContextTypes.DEFAULT_TYPE, user_id, game_id):
@@ -1001,22 +1047,29 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             if current_game[1] == 'running':
                 drawn_numbers = current_game[3].split(',') if current_game[3] else []
-                if number in drawn_numbers and mark_number(card_id, number):
-                    cards = get_user_cards(user_id)
-                    for cid, numbers, marked_numbers, positions, _ in cards:
-                        if cid == card_id:
-                            keyboard = get_card_keyboard(cid, numbers, marked_numbers, game_id, positions)
-                            if keyboard is None:
+                if number in drawn_numbers:
+                    if mark_number(card_id, number):
+                        cards = get_user_cards(user_id)
+                        for cid, numbers, marked_numbers, positions, _ in cards:
+                            if cid == card_id:
+                                keyboard = get_card_keyboard(cid, numbers, marked_numbers, game_id, positions)
+                                if keyboard is None:
+                                    await query.message.edit_text(
+                                        "❌ Քարտը ցուցադրելու սխալ։ Կապվեք աջակցության հետ՝ @LottogramSupport։"
+                                    )
+                                    return
                                 await query.message.edit_text(
-                                    "❌ Քարտը ցուցադրելու սխալ։ Կապվեք աջակցության հետ՝ @LottogramSupport։"
+                                    f"📜 Ձեր քարտը (ID: {card_id[-8:]}):",
+                                    reply_markup=keyboard
                                 )
-                                return
-                            await query.message.edit_text(
-                                f"📜 Ձեր քարտը (ID: {card_id[-8:]}):",
-                                reply_markup=keyboard
-                            )
+                                # Check for winner immediately after marking
+                                winner_id, winner_card_id = await check_all_winners(context, game_id)
+                                if winner_id and winner_card_id:
+                                    await end_game(context, game_id, winner_id, winner_card_id)
+                    else:
+                        await query.answer("❌ Թիվը չի նշվել։")
                 else:
-                    await query.answer("❌ Սխալ թիվ կամ արդեն նշված է։")
+                    await query.answer("❌ Սխալ թիվ կամ դեռ չի հանվել։")
             else:
                 await query.answer("❌ Խաղն ակտիվ չէ։")
         except Exception as e:
