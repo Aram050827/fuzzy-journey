@@ -30,7 +30,7 @@ ADMIN_ID = 1878495685  # Replace with your admin user ID
 
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://fuzzy-journey.onrender.com")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://lottogram.onrender.com")
 PORT = int(os.getenv("PORT", 10000))
 DB_PATH = "lotto.db"  # Persistent disk path for Render
 
