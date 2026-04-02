@@ -27,6 +27,10 @@ PUBLIC_GAME_PAUSE = 60  # 60 seconds for public games
 MAX_NUMBER = 80
 ADMIN_ID = 1878495685  # Replace with your admin user ID
 
+# Number drawing intervals
+PUBLIC_DRAW_INTERVAL = 5  # Seconds between drawn numbers in public games
+PRIVATE_DRAW_INTERVAL = 5 # Seconds between drawn numbers in private games
+
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7325788973:AAFX0CIPGLUVIWR10RD40Qp2IoWYFuboD2E")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://lottogram.onrender.com")
@@ -252,6 +256,12 @@ async def create_game(invite_code, is_private=False):
 
 async def update_game_status(game_id, status, players=None, current_number=None, last_message_id=None, drawn_numbers=None, start_time=None, waiting_players=None):
     async with aiosqlite.connect(DB_PATH) as conn:
+        # Check current status first to prevent overwriting 'finished'
+        async with conn.execute("SELECT status FROM games WHERE game_id = ?", (game_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row and row[0] == 'finished' and status != 'finished':
+                return
+
         if players is not None:
             if waiting_players is not None:
                 await conn.execute("UPDATE games SET status = ?, players = ?, start_time = ?, waiting_players = ? WHERE game_id = ?",
@@ -428,11 +438,27 @@ def get_card_keyboard(card_id, numbers, marked_numbers, game_id, positions):
     
     return InlineKeyboardMarkup(keyboard)
 
+def track_message(context: ContextTypes.DEFAULT_TYPE, user_id: int, message_id: int):
+    user_data = context.application.user_data.setdefault(user_id, {})
+    user_data.setdefault('cleanup_msgs', []).append(message_id)
+
+async def clear_tracked_messages(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    user_data = context.application.user_data.get(user_id, {})
+    msgs = user_data.get('cleanup_msgs', [])
+    for msg_id in msgs:
+        try:
+            await context.bot.delete_message(chat_id=user_id, message_id=msg_id)
+        except Exception:
+            pass
+    user_data['cleanup_msgs'] = []
+
 # Helper for concurrent message sending
-async def broadcast_message(context, user_ids, text, reply_markup=None, parse_mode=None):
+async def broadcast_message(context, user_ids, text, reply_markup=None, parse_mode=None, track=False):
     async def send(uid):
         try:
-            await context.bot.send_message(uid, text, reply_markup=reply_markup, parse_mode=parse_mode)
+            msg = await context.bot.send_message(uid, text, reply_markup=reply_markup, parse_mode=parse_mode)
+            if track:
+                track_message(context, int(uid), msg.message_id)
         except Exception as e:
             logger.warning(f"Failed to send message to {uid}: {e}")
     await asyncio.gather(*(send(uid) for uid in user_ids))
@@ -450,7 +476,8 @@ async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "8. **Խաղի ավարտ**։ Հաղթողի ի հայտ գալուց հետո բոլոր քարտերը ջնջվում են։\n"
         "9. **Ընկերների հետ խաղ**։ Ստեղծեք խաղ, կիսվեք հղումով և սկսեք վայելել խաղը հարազատ միջավայրում։"
     )
-    await update.message.reply_text(rules, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu())
+    msg = await update.message.reply_text(rules, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu())
+    track_message(context, update.effective_user.id, msg.message_id)
 
 async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
@@ -469,7 +496,8 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 **Այլ խնդիրների, առաջարկների կամ գովազդի համար ⬇️**։\n"
         "- Կապվեք մեզ հետ՝ @LottogramSupport։\n\n"
     )
-    await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu())
+    msg = await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu())
+    track_message(context, update.effective_user.id, msg.message_id)
 
 async def add_ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -555,11 +583,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             waiting_ids = waiting_players.split(',') if waiting_players else []
             
             if str(user_id) in player_ids:
-                await update.message.reply_text(
+                msg = await update.message.reply_text(
                     f"🎮 Դուք արդեն խաղի մեջ եք (ID: {game_id[-8:]})\n"
                     "⏳ Սպասեք խաղի մեկնարկին։",
                     reply_markup=get_main_menu()
                 )
+                track_message(context, user_id, msg.message_id)
                 await show_cards(context, user_id, game_id)
                 return
             
@@ -567,11 +596,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if str(user_id) not in waiting_ids:
                     waiting_ids.append(str(user_id))
                     await update_game_status(game_id, status, waiting_players=','.join(waiting_ids))
-                await update.message.reply_text(
+                msg = await update.message.reply_text(
                     "🎮 Խաղն արդեն սկսվել է։\n"
                     "⏳ Սեղմեք «Սպասել»՝ որպեսզի տեղեկացվեք հաջորդ խաղի մասին",
                     reply_markup=get_waiting_menu()
                 )
+                track_message(context, user_id, msg.message_id)
                 return
             
             await generate_card(user_id)
@@ -580,14 +610,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update_game_status(game_id, status, players, start_time=start_time)
             
             other_players = [pid for pid in player_ids if int(pid) != user_id]
-            await broadcast_message(context, other_players, f"🔔 Նոր խաղացող միացավ խաղին։ Ընդհանուր՝ {len(player_ids)} խաղացող։", reply_markup=get_main_menu())
+            await broadcast_message(context, other_players, f"🔔 Նոր խաղացող միացավ խաղին։ Ընդհանուր՝ {len(player_ids)} խաղացող։", reply_markup=get_main_menu(), track=True)
             
-            await update.message.reply_text(
+            msg = await update.message.reply_text(
                 f"🎉 Դուք միացաք խաղին (ID: {game_id[-8:]})\n"
                 f"📜 Ձեզ տրվեց մեկ քարտ։\n"
                 f"⏳ Սպասեք, մինչև խաղը սկսվի։",
                 reply_markup=get_main_menu()
             )
+            track_message(context, user_id, msg.message_id)
             await show_cards(context, user_id, game_id)
         else:
             welcome_message = (
@@ -595,7 +626,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🎮 Ծանոթացիր խաղի կանոններին, խաղա ընկերների հետ կամ միացիր պատահական խաղացողներին։\n"
                 "🔽 Ընտրիր գործողություն՝ մենյուից"
             )
-            await update.message.reply_text(welcome_message, reply_markup=get_main_menu())
+            msg = await update.message.reply_text(welcome_message, reply_markup=get_main_menu())
+            track_message(context, user_id, msg.message_id)
     except Exception as e:
         logger.error(f"Error in start command for user {user_id}: {e}")
         await update.message.reply_text(
@@ -1054,31 +1086,38 @@ async def end_game(context: ContextTypes.DEFAULT_TYPE, game_id, winner_id, winne
     card_text = f"🏆 Հաղթողի քարտ (ID: {winner_card_id[-8:]}):\n" + ', '.join(card_data[0].split(','))
     await update_game_status(game_id, 'finished')
     
-    await delete_all_cards()
+    # Delete only cards for players in this game
+    async with aiosqlite.connect(DB_PATH) as conn:
+        placeholders = ','.join('?' * len(player_ids))
+        await conn.execute(f"DELETE FROM cards WHERE user_id IN ({placeholders})", player_ids)
+        await conn.commit()
     
     async def notify_player(pid):
         try:
+            await clear_tracked_messages(context, int(pid))
             if int(pid) == winner_id:
-                await context.bot.send_message(
+                msg = await context.bot.send_message(
                     pid,
                     f"🎉 Շնորհավորում ենք, {winner_name}։ Դուք հաղթեցիք։\n{card_text}\n"
                     "📜 Բոլոր քարտերը ջնջվեցին։ Սկսե՞լ նոր խաղ։",
                     reply_markup=get_main_menu()
                 )
+                track_message(context, int(pid), msg.message_id)
             else:
-                await context.bot.send_message(
+                msg = await context.bot.send_message(
                     pid,
                     f"🥇 Խաղն ավարտվեց։ Հաղթող՝ {winner_name}\n{card_text}\n"
                     "📜 Բոլոր քարտերը ջնջվեցին։ Սկսե՞լ նոր խաղ։",
                     reply_markup=get_main_menu()
                 )
+                track_message(context, int(pid), msg.message_id)
         except Exception as e:
             logger.warning(f"Failed to notify player {pid}: {e}")
 
     await asyncio.gather(*(notify_player(pid) for pid in player_ids))
     
     valid_waiting_ids = [pid for pid in waiting_ids if pid]
-    await broadcast_message(context, valid_waiting_ids, "🏁 Խաղն ավարտվեց։\n🎮 Սկսեք նոր խաղ կամ միացեք այլ խաղի։", reply_markup=get_main_menu())
+    await broadcast_message(context, valid_waiting_ids, "🏁 Խաղն ավարտվեց։\n🎮 Սկսեք նոր խաղ կամ միացեք այլ խաղի։", reply_markup=get_main_menu(), track=True)
 
 async def start_game(context: ContextTypes.DEFAULT_TYPE):
     game_id = context.job.data['game_id']
@@ -1099,14 +1138,20 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE):
         del context.bot_data[game_id]
 
     player_ids = current_game[2].split(',')
+    is_private = current_game[7] == 1
+    draw_interval = PRIVATE_DRAW_INTERVAL if is_private else PUBLIC_DRAW_INTERVAL
     
-    await broadcast_message(context, player_ids, "🎮 Խաղը սկսվեց։\n\n🍀 Հաջողություն եմ մաղթում Ձեզ։", reply_markup=ReplyKeyboardRemove())
+    # Clear tracked messages before starting
+    for pid in player_ids:
+        await clear_tracked_messages(context, int(pid))
+    
+    await broadcast_message(context, player_ids, "🎮 Խաղը սկսվեց։\n\n🍀 Հաջողություն եմ մաղթում Ձեզ։", reply_markup=ReplyKeyboardRemove(), track=True)
     
     await asyncio.gather(*(show_cards(context, int(pid), game_id) for pid in player_ids))
     
     await asyncio.sleep(3)
     
-    await broadcast_message(context, player_ids, "🎲 Սկսում եմ հանել թվերը․․․")
+    await broadcast_message(context, player_ids, "🎲 Սկսում եմ հանել թվերը․․․", track=True)
     
     await asyncio.sleep(3)
     
@@ -1147,7 +1192,7 @@ async def start_game(context: ContextTypes.DEFAULT_TYPE):
             await end_game(context, game_id, winner_id, winner_card_id)
             break
         
-        await asyncio.sleep(5)
+        await asyncio.sleep(draw_interval)
 
 async def main():
     await init_db()
